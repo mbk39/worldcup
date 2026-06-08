@@ -1,0 +1,12 @@
+# Local editor / preview config (not for sharing)
+.claude/
+
+__pycache__/
+*.pyc
+.venv/
+venv/
+# Local data — do NOT commit people's saved predictions
+predictions.db
+predictions.json
+predictions.json.imported
+*.tmp

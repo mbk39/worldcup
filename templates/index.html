@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>World Cup 2026 Predictor</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header>
+    <div class="title">
+      <h1>🏆 World Cup 2026 Predictor</h1>
+      <span class="sub">Canada · Mexico · USA — pick every result and build your bracket</span>
+    </div>
+    <div class="header-actions">
+      <div id="champion-banner" class="champion hidden"></div>
+      <input id="player-name" class="name-input" type="text" maxlength="40" placeholder="Your name">
+      <input id="player-pin" class="name-input pin-input" type="password" maxlength="20" placeholder="PIN" title="Set a PIN (3–20 chars) the first time. You'll need it to update or delete your prediction.">
+      <button id="save-btn" class="btn primary">Save prediction</button>
+      <button id="reset-btn" class="btn ghost">Reset all</button>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="groups">Group Stage</button>
+    <button class="tab" data-tab="knockout">Knockout Bracket</button>
+    <button class="tab" data-tab="predictions">Everyone's Predictions</button>
+  </nav>
+
+  <main>
+    <section id="tab-groups" class="tab-panel active">
+      <div id="progress-bar" class="progress"><div id="progress-fill"></div><span id="progress-text"></span></div>
+      <div id="groups-grid" class="groups-grid"></div>
+      <div id="third-place" class="third-place hidden">
+        <h2>Best third-placed teams</h2>
+        <p class="hint">Top 8 advance to the Round of 32 (shaded).</p>
+        <table id="third-table"></table>
+      </div>
+    </section>
+
+    <section id="tab-knockout" class="tab-panel">
+      <div id="ko-notice" class="notice hidden"></div>
+      <div id="bracket" class="bracket"></div>
+    </section>
+
+    <section id="tab-predictions" class="tab-panel">
+      <div class="predictions-head">
+        <h2>Everyone's Predictions</h2>
+        <p class="hint">Type your name and hit <b>Save prediction</b> to add yours. Click any card to load and view that bracket.</p>
+      </div>
+      <div id="predictions-grid" class="predictions-grid"></div>
+      <div id="predictions-empty" class="notice hidden">No predictions saved yet — be the first!</div>
+    </section>
+  </main>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

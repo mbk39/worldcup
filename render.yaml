@@ -1,0 +1,20 @@
+# Render Blueprint (alternative host — see DEPLOY.md for the caveat about
+# data persistence on Render's free tier). Deploy by connecting your GitHub
+# repo at https://render.com and choosing "Blueprint".
+services:
+  - type: web
+    name: wc2026-predictor
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn wsgi:application
+    # A persistent disk keeps the SQLite DB across restarts/redeploys.
+    # NOTE: disks are a PAID feature on Render. On the free plan the DB lives
+    # on an ephemeral filesystem and is wiped on every redeploy/restart.
+    disk:
+      name: data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: WC_DB
+        value: /var/data/predictions.db
