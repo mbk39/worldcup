@@ -66,9 +66,28 @@ disk** — so your SQLite database of predictions survives restarts. No credit c
 Free apps show a "Run until 3 months from today" button on the Web tab; click it
 occasionally so the app isn't auto-disabled. That's the only upkeep.
 
-### Updating later
-In a Bash console: `cd ~/worldcup && git pull` (or re-upload changed files), then
-hit **Reload** on the Web tab. Your `predictions.db` is untouched by updates.
+### Deploying from GitHub (recommended over uploading zips)
+
+One-time setup — clone the repo instead of uploading a zip:
+```bash
+cd ~
+git clone https://github.com/mbk39/worldcup.git worldcup
+cd worldcup
+python3.13 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+Then configure the Web tab exactly as above (source/working dir
+`/home/mbk39/worldcup`, virtualenv `/home/mbk39/worldcup/.venv`) and Reload.
+
+### Updating later (one command)
+After new changes are pushed to GitHub, in a Bash console:
+```bash
+cd ~/worldcup && git pull && touch /var/www/mbk39_pythonanywhere_com_wsgi.py
+```
+`git pull` grabs the new code and `touch`-ing the WSGI file reloads the web app
+without needing to click anything. Your `predictions.db` is git-ignored, so it's
+never overwritten by updates.
 
 ---
 
