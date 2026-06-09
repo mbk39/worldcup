@@ -623,3 +623,16 @@ table { width: 100%; border-collapse: collapse; font-size: 13px; }
 #third-table td.team { text-align: left; }
 
 .bk-tp-label { text-align: center; font-size: 10px; color: var(--muted); margin: 14px 0 6px; text-transform: uppercase; letter-spacing: .5px; }
+
+/* ===================== Venues / Map ===================== */
+.fixture-venue { font-size: 10.5px; color: var(--muted); text-align: center; margin: 0 0 2px; }
+.venue-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; }
+.venue-card {
+  background: linear-gradient(180deg, var(--card2), var(--card));
+  border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 14px 16px; box-shadow: var(--shadow-sm);
+}
+.venue-city { font-size: 15px; font-weight: 800; }
+.venue-name { font-size: 13px; color: var(--text); margin-top: 3px; }
+.venue-alt { color: var(--muted); font-weight: 400; }
+.venue-meta { font-size: 11px; color: var(--muted); margin-top: 8px; }

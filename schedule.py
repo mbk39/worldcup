@@ -116,15 +116,110 @@ KO_KICKOFFS_UTC = {
 }
 
 
+# ---------------------------------------------------------------- venues
+# name -> city, country, UTC offset (June/July; US/Canada on DST, Mexico not).
+VENUES = {
+    "Estadio Banorte": {"city": "Mexico City", "country": "Mexico", "off": -6, "alt": "Estadio Azteca"},
+    "Estadio Akron": {"city": "Guadalajara", "country": "Mexico", "off": -6},
+    "Estadio BBVA": {"city": "Monterrey", "country": "Mexico", "off": -6},
+    "BMO Field": {"city": "Toronto", "country": "Canada", "off": -4},
+    "BC Place": {"city": "Vancouver", "country": "Canada", "off": -7},
+    "SoFi Stadium": {"city": "Los Angeles", "country": "USA", "off": -7},
+    "Levi's Stadium": {"city": "San Francisco Bay Area", "country": "USA", "off": -7},
+    "Lumen Field": {"city": "Seattle", "country": "USA", "off": -7},
+    "MetLife Stadium": {"city": "New York / New Jersey", "country": "USA", "off": -4},
+    "Gillette Stadium": {"city": "Boston", "country": "USA", "off": -4},
+    "Lincoln Financial Field": {"city": "Philadelphia", "country": "USA", "off": -4},
+    "Hard Rock Stadium": {"city": "Miami", "country": "USA", "off": -4},
+    "Mercedes-Benz Stadium": {"city": "Atlanta", "country": "USA", "off": -4},
+    "NRG Stadium": {"city": "Houston", "country": "USA", "off": -5},
+    "AT&T Stadium": {"city": "Dallas", "country": "USA", "off": -5},
+    "GEHA Field at Arrowhead Stadium": {"city": "Kansas City", "country": "USA", "off": -5},
+}
+
+_NORMALISE.update({"United States": "USA", "Congo DR": "DR Congo", "Cabo Verde": "Cape Verde"})
+
+# Group matches -> venue (by team pair). Source: ESPN fixtures.
+_RAW_VENUES = [
+    ("Mexico", "South Africa", "Estadio Banorte"), ("South Korea", "Czechia", "Estadio Akron"),
+    ("Canada", "Bosnia-Herzegovina", "BMO Field"), ("United States", "Paraguay", "SoFi Stadium"),
+    ("Qatar", "Switzerland", "Levi's Stadium"), ("Brazil", "Morocco", "MetLife Stadium"),
+    ("Haiti", "Scotland", "Gillette Stadium"), ("Australia", "Türkiye", "BC Place"),
+    ("Germany", "Curaçao", "NRG Stadium"), ("Netherlands", "Japan", "AT&T Stadium"),
+    ("Ivory Coast", "Ecuador", "Lincoln Financial Field"), ("Cape Verde", "Spain", "Mercedes-Benz Stadium"),
+    ("Egypt", "Belgium", "Lumen Field"), ("Uruguay", "Saudi Arabia", "Hard Rock Stadium"),
+    ("New Zealand", "Iran", "SoFi Stadium"), ("Senegal", "France", "MetLife Stadium"),
+    ("Norway", "Iraq", "Gillette Stadium"), ("Algeria", "Argentina", "GEHA Field at Arrowhead Stadium"),
+    ("Jordan", "Austria", "Levi's Stadium"), ("Congo DR", "Portugal", "NRG Stadium"),
+    ("Croatia", "England", "AT&T Stadium"), ("Panama", "Ghana", "BMO Field"),
+    ("Uzbekistan", "Colombia", "Estadio Banorte"),
+    ("Netherlands", "Sweden", "NRG Stadium"), ("Germany", "Ivory Coast", "BMO Field"),
+    ("Ecuador", "Curaçao", "GEHA Field at Arrowhead Stadium"), ("Tunisia", "Japan", "Estadio BBVA"),
+    ("Spain", "Saudi Arabia", "Mercedes-Benz Stadium"), ("Belgium", "Iran", "SoFi Stadium"),
+    ("Uruguay", "Cape Verde", "Hard Rock Stadium"), ("New Zealand", "Egypt", "BC Place"),
+    ("Argentina", "Austria", "AT&T Stadium"), ("France", "Iraq", "Lincoln Financial Field"),
+    ("Norway", "Senegal", "MetLife Stadium"),
+    ("Bosnia-Herzegovina", "Qatar", "Lumen Field"), ("Canada", "Switzerland", "BC Place"),
+    ("Morocco", "Haiti", "Mercedes-Benz Stadium"), ("Scotland", "Brazil", "Hard Rock Stadium"),
+    ("Czechia", "Mexico", "Estadio Banorte"), ("South Africa", "South Korea", "Estadio BBVA"),
+    ("Curaçao", "Ivory Coast", "Lincoln Financial Field"), ("Ecuador", "Germany", "MetLife Stadium"),
+    ("Japan", "Sweden", "AT&T Stadium"), ("Tunisia", "Netherlands", "GEHA Field at Arrowhead Stadium"),
+    ("Paraguay", "Australia", "Levi's Stadium"),
+    ("Czechia", "South Africa", "Mercedes-Benz Stadium"), ("Switzerland", "Bosnia-Herzegovina", "SoFi Stadium"),
+    ("Canada", "Qatar", "BC Place"), ("Mexico", "South Korea", "Estadio Akron"),
+    ("United States", "Australia", "Lumen Field"), ("Scotland", "Morocco", "Gillette Stadium"),
+    ("Brazil", "Haiti", "Lincoln Financial Field"), ("Türkiye", "Paraguay", "Levi's Stadium"),
+]
+_VENUE_PAIR = {frozenset((_NORMALISE.get(a, a), _NORMALISE.get(b, b))): v
+               for a, b, v in _RAW_VENUES}
+
+# Knockout match number -> venue.
+KO_VENUE = {
+    73: "Estadio Banorte", 74: "NRG Stadium", 75: "Gillette Stadium", 76: "Estadio BBVA",
+    77: "AT&T Stadium", 78: "MetLife Stadium", 79: "SoFi Stadium", 80: "Mercedes-Benz Stadium",
+    81: "Lumen Field", 82: "Levi's Stadium", 83: "SoFi Stadium", 84: "BMO Field",
+    85: "BC Place", 86: "AT&T Stadium", 87: "Hard Rock Stadium", 88: "GEHA Field at Arrowhead Stadium",
+    97: "Gillette Stadium", 98: "SoFi Stadium", 99: "Hard Rock Stadium", 100: "GEHA Field at Arrowhead Stadium",
+    101: "AT&T Stadium", 102: "Mercedes-Benz Stadium", 103: "Hard Rock Stadium", 104: "MetLife Stadium",
+}
+
+_MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
+def _local_from_utc(utc_dt, off):
+    loc = utc_dt + _dt.timedelta(hours=off)
+    h = loc.hour % 12 or 12
+    ap = "am" if loc.hour < 12 else "pm"
+    return {"localDate": f"{loc.day} {_MON[loc.month - 1]}", "localTime": f"{h}:{loc.minute:02d}{ap}"}
+
+
+def venue_for_pair(team_a, team_b):
+    """Return venue info {venue, city, country, localDate, localTime} for a group match."""
+    name = _VENUE_PAIR.get(frozenset((team_a, team_b)))
+    if not name:
+        return None
+    sched = for_match(team_a, team_b)
+    info = {"venue": name, "city": VENUES[name]["city"], "country": VENUES[name]["country"]}
+    if sched:  # BST date/time -> UTC -> local
+        bst = _dt.datetime.strptime(f"{sched['date']} {sched['time']}", "%Y-%m-%d %H:%M") \
+            .replace(tzinfo=_dt.timezone(_dt.timedelta(hours=1)))
+        info.update(_local_from_utc(bst.astimezone(_dt.timezone.utc).replace(tzinfo=None), VENUES[name]["off"]))
+    return info
+
+
 def ko_info(num):
-    """Return {date, time (BST), epoch (UTC seconds)} for a knockout match number."""
+    """Return {date, time (BST), epoch, venue, city, localDate, localTime} for a KO match."""
     raw = KO_KICKOFFS_UTC.get(num)
     if not raw:
         return None
     utc = _dt.datetime.strptime(raw, "%Y-%m-%d %H:%M").replace(tzinfo=_dt.timezone.utc)
     bst = utc + _dt.timedelta(hours=1)
-    return {"date": bst.strftime("%Y-%m-%d"), "time": bst.strftime("%H:%M"),
-            "epoch": int(utc.timestamp())}
+    out = {"date": bst.strftime("%Y-%m-%d"), "time": bst.strftime("%H:%M"), "epoch": int(utc.timestamp())}
+    name = KO_VENUE.get(num)
+    if name:
+        out.update({"venue": name, "city": VENUES[name]["city"]})
+        out.update(_local_from_utc(utc.replace(tzinfo=None), VENUES[name]["off"]))
+    return out
 
 
 def _canon(name):

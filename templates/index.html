@@ -33,6 +33,7 @@
     <button class="tab active" data-tab="predictor">Predictor</button>
     <button class="tab" data-tab="live">Live Picks</button>
     <button class="tab" data-tab="results">Results</button>
+    <button class="tab" data-tab="map">Map</button>
     <button class="tab" data-tab="leagues">My Leagues</button>
     <button class="tab admin-only hidden" data-tab="admin">⚙️ Admin</button>
   </nav>
@@ -94,6 +95,14 @@
       <div id="results-standings" class="groups-grid"></div>
       <h3 class="section-h">Fixtures &amp; results</h3>
       <div id="results-list"></div>
+    </section>
+
+    <section id="tab-map" class="tab-panel">
+      <div class="predictions-head">
+        <h2>Host venues</h2>
+        <p class="hint">16 stadiums across Canada, Mexico and the USA. Number of matches at each is shown.</p>
+      </div>
+      <div id="map-list" class="venue-grid"></div>
     </section>
 
     <section id="tab-leagues" class="tab-panel">

@@ -100,6 +100,7 @@ def build_group_fixtures():
                 n += 1
                 home, away = teams[i], teams[j]
                 sched = schedule.for_match(home, away) or {}
+                ven = schedule.venue_for_pair(home, away) or {}
                 group_fx.append({
                     "id": f"G-{letter}-{n}",
                     "stage": "group",
@@ -109,6 +110,10 @@ def build_group_fixtures():
                     "date": sched.get("date"),
                     "time": sched.get("time"),
                     "channel": sched.get("channel"),
+                    "venue": ven.get("venue"),
+                    "city": ven.get("city"),
+                    "localDate": ven.get("localDate"),
+                    "localTime": ven.get("localTime"),
                 })
 
         # A 4-team group has 3 matchdays of 2 matches. The schedule always

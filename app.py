@@ -239,13 +239,17 @@ def _bracket_template():
                 a_lbl, b_lbl = f"W{sides[0]}", f"W{sides[1]}"
             ko = schedule.ko_info(mid) or {}
             matches.append({"id": mid, "labelA": a_lbl, "labelB": b_lbl,
-                            "date": ko.get("date"), "time": ko.get("time")})
+                            "date": ko.get("date"), "time": ko.get("time"),
+                            "venue": ko.get("venue"), "city": ko.get("city"),
+                            "localDate": ko.get("localDate"), "localTime": ko.get("localTime")})
         rounds.append({"name": name, "matches": matches})
     # Third-place play-off (match 103) — its own one-match round.
     ko103 = schedule.ko_info(103) or {}
     rounds.append({"name": "Third place", "matches": [{
         "id": 103, "labelA": "Loser SF1", "labelB": "Loser SF2",
-        "date": ko103.get("date"), "time": ko103.get("time")}]})
+        "date": ko103.get("date"), "time": ko103.get("time"),
+        "venue": ko103.get("venue"), "city": ko103.get("city"),
+        "localDate": ko103.get("localDate"), "localTime": ko103.get("localTime")}]})
     return rounds
 
 
@@ -269,6 +273,7 @@ def api_data():
         "codes3": CODES3,
         "fixtures": build_group_fixtures(),
         "bracket": _bracket_template(),
+        "venues": schedule.VENUES,
     })
 
 

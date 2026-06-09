@@ -312,7 +312,8 @@ async function renderLiveKnockout() {
       const locked = LOCKS.lockedMatches.has(kid);
       const sc = LIVE_KO[kid] || {};
       const res = RESULTS[kid];
-      const when = m.date ? `${fmtDate(m.date)} · ${m.time} BST` : "";
+      const when = (m.date ? `${fmtDate(m.date)} · ${m.time} BST` : "") +
+        (m.venue ? ` · 📍 ${m.venue}` : "");
       const resBadge = (res && res.home != null)
         ? `<span class="st ${res.status === "live" ? "live" : "ft"}">${res.status === "live" ? "LIVE" : "FT"} ${res.home}–${res.away}</span>` : "";
       const lockChip = locked ? `<span class="lockchip">🔒</span>` : "";
@@ -383,6 +384,24 @@ async function onLiveKoChange(row) {
     `Your knockout points so far: <b>${MYPOINTS.knockout?.total || 0}</b>`;
 }
 
+function renderMap() {
+  const wrap = document.getElementById("map-list");
+  if (!wrap || !DATA || !DATA.venues) return;
+  // count matches per venue
+  const count = {};
+  DATA.fixtures.forEach(f => { if (f.venue) count[f.venue] = (count[f.venue] || 0) + 1; });
+  DATA.bracket.forEach(r => r.matches.forEach(m => { if (m.venue) count[m.venue] = (count[m.venue] || 0) + 1; }));
+  const flag = { Mexico: "🇲🇽", Canada: "🇨🇦", USA: "🇺🇸" };
+  const entries = Object.entries(DATA.venues).sort((a, b) =>
+    a[1].country.localeCompare(b[1].country) || a[1].city.localeCompare(b[1].city));
+  wrap.innerHTML = entries.map(([name, v]) => `
+    <div class="venue-card">
+      <div class="venue-city">${flag[v.country] || ""} ${v.city}</div>
+      <div class="venue-name">${name}${v.alt ? ` <span class="venue-alt">(${v.alt})</span>` : ""}</div>
+      <div class="venue-meta">${v.country} · ${count[name] || 0} match${(count[name] || 0) === 1 ? "" : "es"}</div>
+    </div>`).join("");
+}
+
 function wireSubToggle() {
   document.querySelectorAll("#tab-predictor > .subtoggle .subtab").forEach(b =>
     b.addEventListener("click", () => showSub(b.dataset.sub)));
@@ -416,6 +435,7 @@ function wireTabs() {
       if (tab.dataset.tab === "admin" && currentUser && currentUser.isAdmin) renderAdmin();
       if (tab.dataset.tab === "results") renderResults();
       if (tab.dataset.tab === "live") { renderLive(); renderLiveKnockout(); }
+      if (tab.dataset.tab === "map") renderMap();
     });
   });
 }
@@ -1042,6 +1062,12 @@ function renderGroups() {
           `<span class="when">${fmtDate(fx.date)} · ${fx.time} BST</span>` +
           `<span class="chan ${chanClass(fx.channel)}">${fx.channel}</span>`;
         fxWrap.appendChild(meta);
+        if (fx.venue) {
+          const v = document.createElement("div");
+          v.className = "fixture-venue";
+          v.textContent = `📍 ${fx.localTime ? fx.localTime + " local · " : ""}${fx.venue}, ${fx.city}`;
+          fxWrap.appendChild(v);
+        }
       }
       const row = document.createElement("div");
       row.className = "fixture";
@@ -1282,6 +1308,7 @@ async function renderResults() {
         <span class="a">${teamHTML(f.away)}</span>
         <span class="chan ${chanClass(f.channel)}">${f.channel || ""}</span>
       </div>
+      ${f.venue ? `<div class="fixture-venue">📍 ${f.localTime ? f.localTime + " local · " : ""}${f.venue}, ${f.city}</div>` : ""}
       ${scLine}${predLine}
     </div>`;
   });
