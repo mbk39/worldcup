@@ -8,6 +8,18 @@ let simTimer = null, serverSaveTimer = null;
 let currentUser = null;
 let verificationEnforced = false;
 let authGate = false;   // true when the login/signup screen is the mandatory landing
+let RESULTS = {};       // actual match results: match_id -> {home,away,status,scorers}
+let MYPOINTS = { total: 0, perMatch: {} };
+
+async function fetchResults() {
+  const r = await api("GET", "/api/results");
+  RESULTS = r.ok ? (r.data || {}) : {};
+}
+async function fetchMyPoints() {
+  if (!currentUser) { MYPOINTS = { total: 0, perMatch: {} }; return; }
+  const r = await api("GET", "/api/me/points");
+  MYPOINTS = r.ok ? r.data : { total: 0, perMatch: {} };
+}
 
 // ================================================================ helpers
 function teamHTML(team) {
@@ -87,9 +99,23 @@ async function init() {
   wireHeader();
   wireAuthModal();
   wireLeagues();
+  wireSubToggle();
   handleVerifyRedirect();
   await refreshAuth();   // loads server prediction if logged in
+  await fetchResults();
+  await fetchMyPoints();
   await simulate();
+}
+
+function wireSubToggle() {
+  document.querySelectorAll(".subtab").forEach(b =>
+    b.addEventListener("click", () => showSub(b.dataset.sub)));
+}
+function showSub(which) {
+  document.querySelectorAll(".subtab").forEach(t =>
+    t.classList.toggle("active", t.dataset.sub === which));
+  document.getElementById("sub-groups").classList.toggle("active", which === "groups");
+  document.getElementById("sub-knockout").classList.toggle("active", which === "knockout");
 }
 
 function wireTabs() {
@@ -101,6 +127,7 @@ function wireTabs() {
       document.getElementById("tab-" + tab.dataset.tab).classList.add("active");
       if (tab.dataset.tab === "leagues" && currentUser) refreshLeagues();
       if (tab.dataset.tab === "admin" && currentUser && currentUser.isAdmin) renderAdmin();
+      if (tab.dataset.tab === "results") renderResults();
     });
   });
 }
@@ -348,18 +375,20 @@ async function openLeague(code) {
   const leave = document.getElementById("leave-league");
   if (leave) leave.addEventListener("click", () => leaveLeague(data.code));
 
-  // Members board, sorted: most progress first, then name.
-  const members = [...data.members].sort((a, b) =>
-    ((b.summary?.predicted || 0) - (a.summary?.predicted || 0)) ||
-    a.displayName.localeCompare(b.displayName));
-  let html = `<tr><th>Player</th><th>Champion</th><th>Runner-up</th><th>Predicted</th></tr>`;
-  members.forEach(m => {
+  // Members board — server already sorts by points (then progress, name).
+  const members = data.members;
+  document.getElementById("league-note").textContent = data.resultsScored
+    ? `League table by points — ${data.resultsScored} match${data.resultsScored === 1 ? "" : "es"} scored so far.`
+    : "No results in yet — the table ranks by points once matches are played.";
+  let html = `<tr><th>#</th><th>Player</th><th>Pts</th><th>Champion</th><th>Predicted</th></tr>`;
+  members.forEach((m, i) => {
     const s = m.summary || {};
     const me = currentUser && m.userId === currentUser.id ? ' class="me"' : "";
     html += `<tr${me}>
+      <td>${i + 1}</td>
       <td>${escapeHTML(m.displayName)}${me ? " (you)" : ""}</td>
+      <td><b>${m.points || 0}</b></td>
       <td>${s.champion ? teamHTML(s.champion) : "—"}</td>
-      <td>${s.runnerUp ? teamHTML(s.runnerUp) : "—"}</td>
       <td>${s.predicted || 0}/${s.total || 72}</td>
     </tr>`;
   });
@@ -381,10 +410,62 @@ async function deleteLeague(code) {
 
 // ================================================================ admin panel
 async function renderAdmin() {
+  await fetchResults();
   await Promise.all([renderAdminLeagues(), renderAdminUsers()]);
+  renderAdminResults();
   document.getElementById("admin-members").classList.add("hidden");
   const close = document.getElementById("admin-members-close");
   close.onclick = () => document.getElementById("admin-members").classList.add("hidden");
+}
+
+function renderAdminResults() {
+  const wrap = document.getElementById("admin-results");
+  if (!wrap) return;
+  const fx = [...DATA.fixtures].filter(f => f.date)
+    .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  let html = "", curDate = null;
+  fx.forEach(f => {
+    if (f.date !== curDate) { curDate = f.date; html += `<div class="sched-day">${fmtFullDate(f.date)}</div>`; }
+    const r = RESULTS[f.id] || {};
+    const sh = ((r.scorers || {}).home || []).join(", ");
+    const sa = ((r.scorers || {}).away || []).join(", ");
+    const st = r.status || "scheduled";
+    html += `<div class="ares-row" data-mid="${f.id}">
+      <span class="ares-teams">${teamHTML(f.home)} <b class="v">v</b> ${teamHTML(f.away)}</span>
+      <input class="ares-h" type="number" min="0" max="99" value="${r.home ?? ""}" placeholder="–">
+      <input class="ares-a" type="number" min="0" max="99" value="${r.away ?? ""}" placeholder="–">
+      <select class="ares-st">
+        <option value="scheduled"${st === "scheduled" ? " selected" : ""}>Scheduled</option>
+        <option value="live"${st === "live" ? " selected" : ""}>Live</option>
+        <option value="ft"${st === "ft" ? " selected" : ""}>FT</option>
+      </select>
+      <input class="ares-sh" type="text" value="${escapeHTML(sh)}" placeholder="home scorers (comma-sep)">
+      <input class="ares-sa" type="text" value="${escapeHTML(sa)}" placeholder="away scorers (comma-sep)">
+    </div>`;
+  });
+  wrap.innerHTML = html;
+  wrap.querySelectorAll(".ares-row").forEach(row =>
+    row.querySelectorAll("input,select").forEach(el =>
+      el.addEventListener("change", () => saveAdminResult(row))));
+}
+
+async function saveAdminResult(row) {
+  const mid = row.dataset.mid;
+  const body = {
+    home: row.querySelector(".ares-h").value,
+    away: row.querySelector(".ares-a").value,
+    status: row.querySelector(".ares-st").value,
+    scorers: {
+      home: row.querySelector(".ares-sh").value,
+      away: row.querySelector(".ares-sa").value,
+    },
+  };
+  const { ok } = await api("PUT", "/api/admin/results/" + mid, body);
+  row.classList.toggle("saved", ok);
+  row.classList.toggle("err", !ok);
+  setTimeout(() => row.classList.remove("saved", "err"), 900);
+  await fetchResults();
+  await fetchMyPoints();
 }
 
 async function renderAdminLeagues() {
@@ -585,7 +666,6 @@ async function simulate() {
   renderBracket(res);
   renderChampion(res);
   renderProgress();
-  renderSchedule();
 }
 
 function renderProgress() {
@@ -612,7 +692,8 @@ function renderProgress() {
   }
 }
 function jumpToFixture(fid) {
-  document.querySelector('.tab[data-tab="groups"]').click();
+  document.querySelector('.tab[data-tab="predictor"]').click();
+  showSub("groups");
   const inp = document.querySelector(`#groups-grid input[data-mid="${fid}"]`);
   if (!inp) return;
   const row = inp.closest(".fixture");
@@ -653,24 +734,56 @@ function renderThirdPlace(res) {
   table.innerHTML = html;
 }
 
-function renderSchedule() {
-  const wrap = document.getElementById("schedule-list");
+async function renderResults() {
+  const wrap = document.getElementById("results-list");
   if (!wrap || !DATA) return;
+  await fetchResults();
+  await fetchMyPoints();
   const fx = [...DATA.fixtures].filter(f => f.date)
     .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
   let html = "", curDate = null;
   fx.forEach(f => {
     if (f.date !== curDate) { curDate = f.date; html += `<div class="sched-day">${fmtFullDate(f.date)}</div>`; }
-    const sc = state.groupScores[f.id] || {};
-    const has = sc.home != null && sc.away != null;
-    const mid = has ? `<span class="sc">${sc.home} – ${sc.away}</span>` : `<span class="vs">v</span>`;
-    html += `<div class="sched-row">
-      <span class="t">${f.time}</span>
-      <span class="grp" title="Group ${f.group}">${f.group}</span>
-      <span class="h">${teamHTML(f.home)}</span>
-      ${mid}
-      <span class="a">${teamHTML(f.away)}</span>
-      <span class="chan ${chanClass(f.channel)}">${f.channel || ""}</span>
+    const r = RESULTS[f.id];
+    const hasScore = r && r.home != null && r.away != null;
+    let mid;
+    if (hasScore) {
+      const badge = r.status === "live" ? `<span class="st live">LIVE</span>`
+                  : r.status === "ft" ? `<span class="st ft">FT</span>` : "";
+      mid = `<span class="sc">${r.home} – ${r.away}${badge}</span>`;
+    } else {
+      mid = `<span class="vs">v</span>`;
+    }
+
+    // scorers line
+    let scLine = "";
+    const sh = (r && r.scorers && r.scorers.home) || [];
+    const sa = (r && r.scorers && r.scorers.away) || [];
+    if (sh.length || sa.length) {
+      scLine = `<div class="scorers"><span>${sh.map(escapeHTML).join(", ")}</span>` +
+               `<span class="ball">⚽</span><span>${sa.map(escapeHTML).join(", ")}</span></div>`;
+    }
+
+    // your prediction + points
+    let predLine = "";
+    const p = state.groupScores[f.id];
+    if (p && p.home != null && p.away != null) {
+      const pts = MYPOINTS.perMatch ? MYPOINTS.perMatch[f.id] : undefined;
+      const ptsTxt = (hasScore && pts != null)
+        ? ` <span class="pts pts${pts}">+${pts}</span>` : "";
+      predLine = `<div class="your-pick">Your pick: <b>${p.home}–${p.away}</b>${ptsTxt}</div>`;
+    }
+
+    html += `<div class="res-block">
+      <div class="sched-row">
+        <span class="t">${f.time}</span>
+        <span class="grp" title="Group ${f.group}">${f.group}</span>
+        <span class="h">${teamHTML(f.home)}</span>
+        ${mid}
+        <span class="a">${teamHTML(f.away)}</span>
+        <span class="chan ${chanClass(f.channel)}">${f.channel || ""}</span>
+      </div>
+      ${scLine}${predLine}
     </div>`;
   });
   wrap.innerHTML = html;

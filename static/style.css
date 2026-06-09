@@ -369,3 +369,58 @@ table { width: 100%; border-collapse: collapse; font-size: 13px; }
   background: radial-gradient(900px 500px at 50% -10%, #1b2a4d 0%, var(--bg) 60%);
   backdrop-filter: none;
 }
+
+/* ===================== Predictor sub-toggle ===================== */
+.subtoggle {
+  display: inline-flex; gap: 4px; background: var(--bg2); border: 1px solid var(--line);
+  border-radius: 10px; padding: 4px; margin-bottom: 18px;
+}
+.subtab {
+  background: none; border: none; color: var(--muted); cursor: pointer;
+  padding: 8px 18px; border-radius: 7px; font-size: 14px;
+}
+.subtab.active { background: var(--accent); color: #03261a; font-weight: 700; }
+.sub-panel { display: none; }
+.sub-panel.active { display: block; }
+
+/* ===================== Results tab ===================== */
+.res-block { padding: 2px 0 6px; border-bottom: 1px solid rgba(40,53,87,.5); }
+.st {
+  font-size: 9px; font-weight: 800; padding: 1px 5px; border-radius: 4px;
+  margin-left: 6px; vertical-align: middle; letter-spacing: .5px;
+}
+.st.live { background: #dc2626; color: #fff; animation: pulse 1.6s infinite; }
+.st.ft { background: var(--line); color: var(--muted); }
+@keyframes pulse { 50% { opacity: .55; } }
+.scorers {
+  display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px;
+  font-size: 11px; color: var(--muted); padding: 0 10px 2px;
+}
+.scorers span:first-child { text-align: right; }
+.scorers .ball { opacity: .6; }
+.your-pick { font-size: 11px; color: var(--muted); padding: 0 10px 2px; text-align: center; }
+.pts { font-weight: 800; padding: 0 5px; border-radius: 4px; font-size: 11px; }
+.pts3 { background: var(--win); color: #fff; }
+.pts1 { background: #b8860b; color: #fff; }
+.pts0 { background: var(--line); color: var(--muted); }
+
+/* ===================== Admin results editor ===================== */
+.ares-row {
+  display: grid; align-items: center; gap: 8px;
+  grid-template-columns: minmax(180px,1.4fr) 44px 44px 110px 1fr 1fr;
+  padding: 5px 6px; border-radius: 8px;
+}
+.ares-row.saved { background: rgba(52,211,153,.14); }
+.ares-row.err { background: rgba(248,113,113,.14); }
+.ares-teams { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ares-teams .v { color: var(--muted); font-weight: 400; margin: 0 4px; }
+.ares-row input, .ares-row select {
+  background: var(--bg2); border: 1px solid var(--line); color: var(--text);
+  border-radius: 6px; padding: 6px; font-size: 13px;
+}
+.ares-row input[type=number] { text-align: center; }
+.ares-row input:focus, .ares-row select:focus { outline: none; border-color: var(--accent2); }
+@media (max-width: 720px) {
+  .ares-row { grid-template-columns: 1fr 40px 40px; }
+  .ares-row .ares-st, .ares-row .ares-sh, .ares-row .ares-sa { grid-column: span 3; }
+}

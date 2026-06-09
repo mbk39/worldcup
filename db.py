@@ -57,6 +57,15 @@ def init_db():
                 joined    INTEGER NOT NULL,
                 PRIMARY KEY (league_id, user_id)
             );
+
+            CREATE TABLE IF NOT EXISTS results (
+                match_id TEXT PRIMARY KEY,   -- 'G-A-1' for groups, 'K-73' for knockout
+                home     INTEGER,
+                away     INTEGER,
+                status   TEXT NOT NULL DEFAULT 'scheduled',  -- scheduled|live|ft
+                scorers  TEXT NOT NULL DEFAULT '{}',          -- JSON {home:[],away:[]}
+                updated  INTEGER NOT NULL
+            );
             """
         )
 
@@ -236,6 +245,56 @@ def set_verified(user_id):
 def delete_user(user_id):
     with _lock, _conn() as conn:
         conn.execute("DELETE FROM users WHERE id=?", (user_id,))
+
+
+# --------------------------------------------------------------- results
+def upsert_result(match_id, home, away, status, scorers, updated):
+    with _lock, _conn() as conn:
+        conn.execute(
+            """INSERT INTO results(match_id,home,away,status,scorers,updated)
+               VALUES(?,?,?,?,?,?)
+               ON CONFLICT(match_id) DO UPDATE SET
+                   home=excluded.home, away=excluded.away, status=excluded.status,
+                   scorers=excluded.scorers, updated=excluded.updated""",
+            (match_id, home, away, status, json.dumps(scorers), updated),
+        )
+
+
+def delete_result(match_id):
+    with _lock, _conn() as conn:
+        conn.execute("DELETE FROM results WHERE match_id=?", (match_id,))
+
+
+def get_all_results():
+    with _conn() as conn:
+        rows = conn.execute("SELECT * FROM results").fetchall()
+    out = {}
+    for r in rows:
+        out[r["match_id"]] = {
+            "home": r["home"], "away": r["away"], "status": r["status"],
+            "scorers": json.loads(r["scorers"] or "{}"), "updated": r["updated"],
+        }
+    return out
+
+
+def get_league_member_states(league_id):
+    """Members with their full prediction state (for points calculation)."""
+    with _conn() as conn:
+        rows = conn.execute(
+            """SELECT u.id, u.display_name, p.state AS state
+               FROM league_members m
+               JOIN users u ON u.id = m.user_id
+               LEFT JOIN predictions p ON p.user_id = u.id
+               WHERE m.league_id = ?""",
+            (league_id,),
+        ).fetchall()
+    out = []
+    for r in rows:
+        out.append({
+            "userId": r["id"], "displayName": r["display_name"],
+            "state": json.loads(r["state"]) if r["state"] else None,
+        })
+    return out
 
 
 def league_members(league_id):

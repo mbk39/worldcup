@@ -27,36 +27,42 @@
   </header>
 
   <nav class="tabs">
-    <button class="tab active" data-tab="groups">Group Stage</button>
-    <button class="tab" data-tab="schedule">Schedule</button>
-    <button class="tab" data-tab="knockout">Knockout Bracket</button>
+    <button class="tab active" data-tab="predictor">Predictor</button>
+    <button class="tab" data-tab="results">Results</button>
     <button class="tab" data-tab="leagues">My Leagues</button>
     <button class="tab admin-only hidden" data-tab="admin">⚙️ Admin</button>
   </nav>
 
   <main>
-    <section id="tab-groups" class="tab-panel active">
-      <div id="progress-bar" class="progress"><div id="progress-fill"></div><span id="progress-text"></span></div>
-      <div id="progress-missing" class="progress-missing hidden"></div>
-      <div id="groups-grid" class="groups-grid"></div>
-      <div id="third-place" class="third-place hidden">
-        <h2>Best third-placed teams</h2>
-        <p class="hint">Top 8 advance to the Round of 32 (shaded).</p>
-        <table id="third-table"></table>
+    <section id="tab-predictor" class="tab-panel active">
+      <div class="subtoggle">
+        <button class="subtab active" data-sub="groups">Group Stage</button>
+        <button class="subtab" data-sub="knockout">Knockout Bracket</button>
+      </div>
+
+      <div id="sub-groups" class="sub-panel active">
+        <div id="progress-bar" class="progress"><div id="progress-fill"></div><span id="progress-text"></span></div>
+        <div id="progress-missing" class="progress-missing hidden"></div>
+        <div id="groups-grid" class="groups-grid"></div>
+        <div id="third-place" class="third-place hidden">
+          <h2>Best third-placed teams</h2>
+          <p class="hint">Top 8 advance to the Round of 32 (shaded).</p>
+          <table id="third-table"></table>
+        </div>
+      </div>
+
+      <div id="sub-knockout" class="sub-panel">
+        <div id="ko-notice" class="notice hidden"></div>
+        <div id="bracket" class="bracket"></div>
       </div>
     </section>
 
-    <section id="tab-schedule" class="tab-panel">
+    <section id="tab-results" class="tab-panel">
       <div class="predictions-head">
-        <h2>Match Schedule</h2>
-        <p class="hint">All 72 group matches in kick-off order (UK time). Your predicted scores appear here as you fill them in on the Group Stage tab.</p>
+        <h2>Fixtures &amp; Results</h2>
+        <p class="hint">Live &amp; final scores with goalscorers (UK kick-off times). Your prediction and points appear per match once results are in.</p>
       </div>
-      <div id="schedule-list"></div>
-    </section>
-
-    <section id="tab-knockout" class="tab-panel">
-      <div id="ko-notice" class="notice hidden"></div>
-      <div id="bracket" class="bracket"></div>
+      <div id="results-list"></div>
     </section>
 
     <section id="tab-leagues" class="tab-panel">
@@ -98,6 +104,7 @@
             </div>
           </div>
           <div id="league-detail-actions" class="league-detail-actions"></div>
+          <div id="league-note" class="hint"></div>
           <table id="league-board"></table>
         </div>
       </div>
@@ -122,6 +129,10 @@
 
       <h3 class="admin-h">Users</h3>
       <table id="admin-users" class="admin-table"></table>
+
+      <h3 class="admin-h">Match results (group stage)</h3>
+      <p class="hint">Enter the score, status and goalscorers. Saves automatically; points update for everyone.</p>
+      <div id="admin-results"></div>
     </section>
 
   <!-- Auth modal -->

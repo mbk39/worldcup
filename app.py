@@ -37,6 +37,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 import db
 import emailer
+import points as scoring
 from data import (
     GROUPS, FLAGS, FLAG_CODES, build_group_fixtures,
     R32, R16, QF, SF, FINAL,
@@ -52,6 +53,8 @@ app.config.update(
 
 db.init_db()
 _FIXTURE_IDS = [f["id"] for f in build_group_fixtures()]
+_KO_IDS = [f"K-{n}" for n in (list(R32) + list(R16) + list(QF) + list(SF) + list(FINAL) + [103])]
+_VALID_MATCH_IDS = set(_FIXTURE_IDS) | set(_KO_IDS)
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _ADMIN_EMAILS = {
     e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()
@@ -314,6 +317,20 @@ def api_save_prediction(user):
     return jsonify({"ok": True, "summary": summary})
 
 
+# --------------------------------------------------------------- results & points
+@app.route("/api/results")
+def api_results():
+    return jsonify(db.get_all_results())
+
+
+@app.route("/api/me/points")
+@login_required
+def api_my_points(user):
+    rec = db.get_prediction(user["id"])
+    pts = scoring.compute_points(rec["state"] if rec else None, db.get_all_results())
+    return jsonify(pts)
+
+
 # --------------------------------------------------------------- leagues
 def _league_public(lg, user_id):
     return {"code": lg["code"], "name": lg["name"],
@@ -363,10 +380,20 @@ def api_league_detail(user, code):
         return jsonify({"error": "No league found with that code."}), 404
     if not db.is_member(lg["id"], user["id"]):
         return jsonify({"error": "You're not a member of this league."}), 403
+    results = db.get_all_results()
+    members = db.league_members(lg["id"])
+    states = {m["userId"]: m["state"] for m in db.get_league_member_states(lg["id"])}
+    for m in members:
+        m["points"] = scoring.compute_points(states.get(m["userId"]), results)["total"]
+    members.sort(key=lambda m: (-m["points"],
+                                -((m.get("summary") or {}).get("predicted") or 0),
+                                m["displayName"].lower()))
     return jsonify({
         "code": lg["code"], "name": lg["name"],
         "isOwner": lg["owner_id"] == user["id"],
-        "members": db.league_members(lg["id"]),
+        "members": members,
+        "resultsScored": sum(1 for mid, r in results.items()
+                             if mid.startswith("G-") and isinstance(r.get("home"), int)),
     })
 
 
@@ -444,6 +471,46 @@ def api_admin_remove_member(user, code):
     if not uid:
         return jsonify({"error": "userId required."}), 400
     db.remove_member(lg["id"], uid)
+    return jsonify({"ok": True})
+
+
+def _clean_scorers(raw):
+    out = {"home": [], "away": []}
+    if isinstance(raw, dict):
+        for side in ("home", "away"):
+            vals = raw.get(side) or []
+            if isinstance(vals, str):
+                vals = [v.strip() for v in vals.split(",")]
+            out[side] = [str(v).strip()[:60] for v in vals if str(v).strip()][:15]
+    return out
+
+
+@app.route("/api/admin/results/<match_id>", methods=["PUT"])
+@admin_required
+def api_admin_put_result(user, match_id):
+    if match_id not in _VALID_MATCH_IDS:
+        return jsonify({"error": "Unknown match id."}), 404
+    body = request.get_json(force=True, silent=True) or {}
+
+    def _score(v):
+        if v in (None, ""):
+            return None
+        try:
+            return max(0, min(99, int(v)))
+        except (TypeError, ValueError):
+            return None
+
+    home, away = _score(body.get("home")), _score(body.get("away"))
+    status = body.get("status") if body.get("status") in ("scheduled", "live", "ft") else "scheduled"
+    scorers = _clean_scorers(body.get("scorers"))
+    db.upsert_result(match_id, home, away, status, scorers, int(time.time()))
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/results/<match_id>", methods=["DELETE"])
+@admin_required
+def api_admin_delete_result(user, match_id):
+    db.delete_result(match_id)
     return jsonify({"ok": True})
 
 
