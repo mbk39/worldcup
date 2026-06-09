@@ -1293,18 +1293,16 @@ function renderGroups() {
       }
       const sc = state.groupScores[fx.id] || {};
       const venueTip = fx.venue ? `${fx.venue}, ${fx.city}` : "";
-      if (fx.date) {
-        const meta = document.createElement("div");
-        meta.className = "fixture-meta";
-        meta.innerHTML = `<span class="when">${fmtDate(fx.date)} · ${fx.time} BST</span>` +
-          (venueTip ? `<span class="loc-hint" title="${escapeHTML(venueTip)}">📍 venue</span>` : "");
-        fxWrap.appendChild(meta);
-      }
-      const line = document.createElement("div");
-      line.className = "fixture-line";
-      if (venueTip) line.title = "📍 " + venueTip;
+      const meta = document.createElement("div");
+      meta.className = "fixture-meta";
+      meta.innerHTML =
+        (fx.channel ? `<span class="chan-meta chan ${chanClass(fx.channel)}">${fx.channel}</span>` : "") +
+        (fx.date ? `<span class="when">${fmtDate(fx.date)} · ${fx.time} BST</span>` : "") +
+        (venueTip ? `<span class="loc-hint" title="${escapeHTML(venueTip)}">📍 venue</span>` : "");
+      if (meta.innerHTML) fxWrap.appendChild(meta);
       const row = document.createElement("div");
       row.className = "fixture";
+      if (venueTip) row.title = "📍 " + venueTip;
       row.innerHTML = `
         <span class="home">${teamHTML(fx.home)}</span>
         <span class="score">
@@ -1313,9 +1311,7 @@ function renderGroups() {
           <input type="number" min="0" max="99" data-mid="${fx.id}" data-side="away" value="${sc.away ?? ""}">
         </span>
         <span class="away">${teamHTML(fx.away)}</span>`;
-      line.innerHTML = `<span class="chan-left chan ${chanClass(fx.channel)}">${fx.channel || ""}</span>`;
-      line.appendChild(row);
-      fxWrap.appendChild(line);
+      fxWrap.appendChild(row);
       markFixture(row);
     });
   });

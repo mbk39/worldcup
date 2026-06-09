@@ -174,16 +174,14 @@ header {
 
 main { padding: 22px 28px 70px; max-width: 1400px; margin: 0 auto; }
 
-/* Wide screens: compact the fixtures so the denser 4 × 3 group grid (defined
-   just after .groups-grid below) stays readable in the narrower cards. */
+/* Wide screens: gently compact the fixtures so the denser 4 × 3 group grid
+   (defined just after .groups-grid below) stays readable. The TV channel now
+   lives on the meta line, so the row gives its full width to the team names. */
 @media (min-width: 1300px) {
-  .groups-grid .fixture { gap: 4px; }
-  .groups-grid .fixture-line { gap: 4px; }
-  .groups-grid .fixture .score { gap: 2px; }
-  .groups-grid .fixture input { width: 30px; padding: 6px 0; }
-  .groups-grid .chan-left { width: 38px; min-width: 38px; max-width: 38px; font-size: 8px; padding: 2px; overflow: hidden; }
-  .groups-grid .fixture .flag-img { width: 18px; height: 13px; margin-right: 4px; }
-  .groups-grid .fixture .home, .groups-grid .fixture .away { font-size: 12px; }
+  .groups-grid .fixture { gap: 6px; }
+  .groups-grid .fixture .score { gap: 3px; }
+  .groups-grid .fixture input { width: 32px; padding: 6px 0; }
+  .groups-grid .fixture .flag-img { width: 20px; height: 15px; margin-right: 5px; }
 }
 .section-h { margin: 26px 0 10px; font-size: 16px; font-weight: 700; }
 .tab-panel { display: none; }
