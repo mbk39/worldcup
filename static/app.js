@@ -105,6 +105,25 @@ async function init() {
   await fetchResults();
   await fetchMyPoints();
   await simulate();
+  startLiveRefresh();
+}
+
+// Poll for new results so scores/leaderboards update without a manual reload.
+function startLiveRefresh() {
+  setInterval(async () => {
+    if (document.hidden || !currentUser) return;
+    const active = document.querySelector(".tab.active")?.dataset.tab;
+    if (active === "results") {
+      await renderResults();
+    } else if (active === "leagues" &&
+               !document.getElementById("league-detail").classList.contains("hidden")) {
+      const code = document.getElementById("league-detail-code").textContent;
+      if (code) openLeague(code);
+    } else {
+      await fetchResults();   // keep cache warm for when they switch tabs
+      await fetchMyPoints();
+    }
+  }, 60000);
 }
 
 function wireSubToggle() {

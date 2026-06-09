@@ -1,0 +1,23 @@
+name: Feed live results
+
+# Pulls live/final WC scores from ESPN and pushes them into the app.
+# Runs every ~10 minutes (GitHub may delay scheduled runs), plus on demand.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  feed:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - name: Push results
+        env:
+          APP_URL: ${{ vars.APP_URL || 'https://mbk39.pythonanywhere.com' }}
+          FEED_TOKEN: ${{ secrets.FEED_TOKEN }}
+        run: python feeder/feed_results.py

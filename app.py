@@ -59,6 +59,16 @@ _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _ADMIN_EMAILS = {
     e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()
 }
+_FEED_TOKEN = os.environ.get("FEED_TOKEN", "")
+
+
+def _parse_score(v):
+    if v in (None, ""):
+        return None
+    try:
+        return max(0, min(99, int(v)))
+    except (TypeError, ValueError):
+        return None
 _CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no ambiguous chars (0/O/1/I)
 
 
@@ -329,6 +339,31 @@ def api_my_points(user):
     rec = db.get_prediction(user["id"])
     pts = scoring.compute_points(rec["state"] if rec else None, db.get_all_results())
     return jsonify(pts)
+
+
+@app.route("/api/feed/results", methods=["POST"])
+def api_feed_results():
+    """Machine ingest for the external feeder (GitHub Actions). Token-auth via
+    the X-Feed-Token header; disabled unless FEED_TOKEN is configured."""
+    if not _FEED_TOKEN:
+        return jsonify({"error": "Feed disabled (no FEED_TOKEN configured)."}), 503
+    token = request.headers.get("X-Feed-Token", "")
+    if not secrets.compare_digest(token, _FEED_TOKEN):
+        return jsonify({"error": "Invalid feed token."}), 403
+
+    body = request.get_json(force=True, silent=True) or {}
+    items = body.get("results") or []
+    now = int(time.time())
+    updated = 0
+    for it in items:
+        mid = it.get("matchId")
+        if mid not in _VALID_MATCH_IDS:
+            continue
+        status = it.get("status") if it.get("status") in ("scheduled", "live", "ft") else "live"
+        db.upsert_result(mid, _parse_score(it.get("home")), _parse_score(it.get("away")),
+                         status, _clean_scorers(it.get("scorers")), now)
+        updated += 1
+    return jsonify({"ok": True, "updated": updated})
 
 
 # --------------------------------------------------------------- leagues
