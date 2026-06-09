@@ -142,6 +142,7 @@ function renderGroups() {
         </span>
         <span class="away">${teamHTML(fx.away)}</span>`;
       fxWrap.appendChild(row);
+      markFixture(row);
     });
   });
 
@@ -163,9 +164,18 @@ function onScoreInput(e) {
   else state.groupScores[mid] = sc;
   saveState();
   scheduleSim();
+  markFixture(inp.closest(".fixture"));
 
   // Auto-advance to the next box after a digit is entered (speeds up entry).
   if (v !== null && inp.value !== "") focusSibling(inp, +1);
+}
+
+// Flag a fixture that has exactly one of its two score boxes filled.
+function markFixture(row) {
+  if (!row) return;
+  const filled = [...row.querySelectorAll("input")]
+    .filter(i => i.value.trim() !== "").length;
+  row.classList.toggle("half", filled === 1);
 }
 
 function onScoreKeydown(e) {
