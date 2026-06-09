@@ -404,11 +404,13 @@ function renderMap() {
   const entries = Object.entries(DATA.venues).sort((a, b) =>
     a[1].country.localeCompare(b[1].country) || a[1].city.localeCompare(b[1].city));
   wrap.innerHTML = entries.map(([name, v]) => `
-    <div class="venue-card">
+    <div class="venue-card" data-venue="${escapeHTML(name)}">
       <div class="venue-city">${flag[v.country] || ""} ${v.city}</div>
       <div class="venue-name">${name}${v.alt ? ` <span class="venue-alt">(${v.alt})</span>` : ""}</div>
-      <div class="venue-meta">${v.country} · ${count[name] || 0} match${(count[name] || 0) === 1 ? "" : "es"}</div>
+      <div class="venue-meta">${v.country} · ${count[name] || 0} match${(count[name] || 0) === 1 ? "" : "es"} · tap to view</div>
     </div>`).join("");
+  wrap.querySelectorAll(".venue-card").forEach(c =>
+    c.addEventListener("click", () => showVenueMatches(c.dataset.venue)));
 
   if (window.L) {
     if (!window._venueMap) {
@@ -421,7 +423,8 @@ function renderMap() {
         window.L.circleMarker([v.lat, v.lng],
           { radius: 8, color: "#fff", weight: 2, fillColor: "#fb923c", fillOpacity: .95 })
           .addTo(map)
-          .bindPopup(`<b>${name}</b><br>${v.city}, ${v.country}<br>${count[name] || 0} match${(count[name] || 0) === 1 ? "" : "es"}`);
+          .bindPopup(`<b>${name}</b><br>${v.city}, ${v.country}<br>${count[name] || 0} match${(count[name] || 0) === 1 ? "" : "es"}`)
+          .on("click", () => showVenueMatches(name));
         pts.push([v.lat, v.lng]);
       });
       if (pts.length) map.fitBounds(pts, { padding: [34, 34] });
@@ -429,6 +432,36 @@ function renderMap() {
     }
     setTimeout(() => window._venueMap.invalidateSize(), 120);
   }
+}
+
+function showVenueMatches(name) {
+  const panel = document.getElementById("venue-matches");
+  if (!panel) return;
+  const rows = [];
+  DATA.fixtures.filter(f => f.venue === name).forEach(f => rows.push({
+    date: f.date, time: f.time,
+    teams: `${teamHTML(f.home)} <span class="vm-vs">v</span> ${teamHTML(f.away)}`,
+    sub: `Group ${f.group}`,
+  }));
+  DATA.bracket.forEach(r => r.matches.forEach(m => {
+    if (m.venue === name) rows.push({
+      date: m.date, time: m.time,
+      teams: `<span class="vm-slot">${m.labelA} <span class="vm-vs">v</span> ${m.labelB}</span>`,
+      sub: `Match ${m.id} · ${r.name}`,
+    });
+  }));
+  rows.sort((a, b) => ((a.date || "") + (a.time || "")).localeCompare((b.date || "") + (b.time || "")));
+
+  panel.innerHTML =
+    `<div class="vm-head"><b>${escapeHTML(name)}</b> · ${rows.length} match${rows.length === 1 ? "" : "es"}` +
+    `<button class="btn ghost small" id="vm-close">Close</button></div>` +
+    rows.map(x => `<div class="vm-row">
+      <span class="vm-when">${x.date ? fmtDate(x.date) : ""}${x.time ? " · " + x.time : ""}</span>
+      <span class="vm-teams">${x.teams}</span>
+      <span class="vm-sub">${x.sub}</span></div>`).join("");
+  panel.classList.remove("hidden");
+  document.getElementById("vm-close").onclick = () => panel.classList.add("hidden");
+  panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 function wireSubToggle() {
