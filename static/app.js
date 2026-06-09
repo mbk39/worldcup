@@ -9,16 +9,28 @@ let currentUser = null;
 let verificationEnforced = false;
 let authGate = false;   // true when the login/signup screen is the mandatory landing
 let RESULTS = {};       // actual match results: match_id -> {home,away,status,scorers}
-let MYPOINTS = { total: 0, perMatch: {} };
+let LIVE_SCORES = {};   // this user's continuous per-match picks
+let LOCKS = { tournamentLocked: false, lockedMatches: new Set(), tournamentLockTime: 0 };
+const ZERO_PTS = { total: 0, perMatch: {} };
+let MYPOINTS = { tournament: { ...ZERO_PTS }, live: { ...ZERO_PTS } };
 
 async function fetchResults() {
   const r = await api("GET", "/api/results");
   RESULTS = r.ok ? (r.data || {}) : {};
 }
+async function fetchLocks() {
+  const r = await api("GET", "/api/locks");
+  if (r.ok) LOCKS = { ...r.data, lockedMatches: new Set(r.data.lockedMatches || []) };
+}
+async function fetchLive() {
+  if (!currentUser) { LIVE_SCORES = {}; return; }
+  const r = await api("GET", "/api/live");
+  LIVE_SCORES = r.ok ? (r.data.scores || {}) : {};
+}
 async function fetchMyPoints() {
-  if (!currentUser) { MYPOINTS = { total: 0, perMatch: {} }; return; }
+  if (!currentUser) { MYPOINTS = { tournament: { ...ZERO_PTS }, live: { ...ZERO_PTS } }; return; }
   const r = await api("GET", "/api/me/points");
-  MYPOINTS = r.ok ? r.data : { total: 0, perMatch: {} };
+  MYPOINTS = r.ok ? r.data : { tournament: { ...ZERO_PTS }, live: { ...ZERO_PTS } };
 }
 
 // ================================================================ helpers
@@ -93,6 +105,7 @@ async function init() {
     bracketLabels[m.id] = { labelA: m.labelA, labelB: m.labelB };
   }));
   loadState();
+  await fetchLocks();      // need lock state before rendering inputs
   renderGroups();
   renderBracketSkeleton();
   wireTabs();
@@ -101,10 +114,12 @@ async function init() {
   wireLeagues();
   wireSubToggle();
   handleVerifyRedirect();
-  await refreshAuth();   // loads server prediction if logged in
+  await refreshAuth();     // loads server prediction if logged in
+  await fetchLive();
   await fetchResults();
   await fetchMyPoints();
   await simulate();
+  applyTournamentLock();
   startLiveRefresh();
 }
 
@@ -112,18 +127,105 @@ async function init() {
 function startLiveRefresh() {
   setInterval(async () => {
     if (document.hidden || !currentUser) return;
+    await fetchLocks();
+    applyTournamentLock();
     const active = document.querySelector(".tab.active")?.dataset.tab;
     if (active === "results") {
       await renderResults();
+    } else if (active === "live") {
+      await renderLive();
     } else if (active === "leagues" &&
                !document.getElementById("league-detail").classList.contains("hidden")) {
       const code = document.getElementById("league-detail-code").textContent;
       if (code) openLeague(code);
     } else {
-      await fetchResults();   // keep cache warm for when they switch tabs
+      await fetchResults();
       await fetchMyPoints();
     }
   }, 60000);
+}
+
+// ---------------------------------------------------------------- tournament lock + live picks
+function lockTimeText() {
+  if (!LOCKS.tournamentLockTime) return "the first kick-off";
+  try {
+    return new Date(LOCKS.tournamentLockTime * 1000).toLocaleString("en-GB", {
+      timeZone: "Europe/London", weekday: "short", day: "numeric",
+      month: "short", hour: "2-digit", minute: "2-digit",
+    }) + " BST";
+  } catch (_) { return "11 Jun, 20:00 BST"; }
+}
+
+function applyTournamentLock() {
+  const bar = document.getElementById("predictor-lock");
+  const locked = LOCKS.tournamentLocked;
+  if (bar) {
+    bar.classList.remove("hidden");
+    bar.className = "lockbar" + (locked ? " locked" : "");
+    bar.innerHTML = locked
+      ? "🔒 Tournament predictions are locked — the tournament has started. Use <b>Live Picks</b> to keep predicting upcoming games."
+      : `🔓 Your Tournament bracket locks at the first kick-off — <b>${lockTimeText()}</b>. After that, use <b>Live Picks</b> for the rest of the tournament.`;
+  }
+  document.querySelectorAll("#groups-grid input").forEach(i => (i.disabled = locked));
+  const sb = document.getElementById("save-btn");
+  if (sb) sb.style.display = locked ? "none" : "";
+}
+
+async function renderLive() {
+  const wrap = document.getElementById("live-list");
+  if (!wrap || !DATA) return;
+  await fetchLocks();
+  await fetchLive();
+  await fetchResults();
+  await fetchMyPoints();
+  document.getElementById("live-points").innerHTML =
+    `Your live points so far: <b>${MYPOINTS.live?.total || 0}</b>`;
+
+  const fx = [...DATA.fixtures].filter(f => f.date)
+    .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  let html = "", curDate = null;
+  fx.forEach(f => {
+    if (f.date !== curDate) { curDate = f.date; html += `<div class="sched-day">${fmtFullDate(f.date)}</div>`; }
+    const locked = LOCKS.lockedMatches.has(f.id);
+    const sc = LIVE_SCORES[f.id] || {};
+    const res = RESULTS[f.id];
+    const resBadge = (res && res.home != null)
+      ? `<span class="st ${res.status === "live" ? "live" : "ft"}">${res.status === "live" ? "LIVE" : "FT"} ${res.home}–${res.away}</span>` : "";
+    const lockChip = locked ? `<span class="lockchip">🔒</span>` : "";
+    let pill = "";
+    if (res && res.home != null && sc.home != null && sc.away != null) {
+      const p = MYPOINTS.live?.perMatch?.[f.id];
+      if (p != null) pill = `<span class="pts pts${p}">+${p}</span>`;
+    }
+    const inputs = locked
+      ? `<span class="locked-pick">${sc.home ?? "–"} – ${sc.away ?? "–"}</span>`
+      : `<input type="number" min="0" max="99" class="live-h" value="${sc.home ?? ""}">` +
+        `<span>–</span><input type="number" min="0" max="99" class="live-a" value="${sc.away ?? ""}">`;
+    html += `<div class="live-meta"><span class="when">${f.time} BST</span> ${resBadge} ${lockChip} ${pill}
+        <span class="chan ${chanClass(f.channel)}">${f.channel || ""}</span></div>
+      <div class="fixture${locked ? " locked" : ""}" data-mid="${f.id}">
+        <span class="home">${teamHTML(f.home)}</span>
+        <span class="score">${inputs}</span>
+        <span class="away">${teamHTML(f.away)}</span>
+      </div>`;
+  });
+  wrap.innerHTML = html;
+  wrap.querySelectorAll(".fixture:not(.locked) input").forEach(i => {
+    i.addEventListener("change", onLiveChange);
+    i.addEventListener("focus", () => i.select());
+  });
+}
+
+async function onLiveChange(e) {
+  const row = e.target.closest(".fixture");
+  const mid = row.dataset.mid;
+  const home = row.querySelector(".live-h").value;
+  const away = row.querySelector(".live-a").value;
+  const { ok, data } = await api("POST", "/api/live", { scores: { [mid]: { home, away } } });
+  if (ok) LIVE_SCORES = data.scores;
+  await fetchMyPoints();
+  document.getElementById("live-points").innerHTML =
+    `Your live points so far: <b>${MYPOINTS.live?.total || 0}</b>`;
 }
 
 function wireSubToggle() {
@@ -147,6 +249,7 @@ function wireTabs() {
       if (tab.dataset.tab === "leagues" && currentUser) refreshLeagues();
       if (tab.dataset.tab === "admin" && currentUser && currentUser.isAdmin) renderAdmin();
       if (tab.dataset.tab === "results") renderResults();
+      if (tab.dataset.tab === "live") renderLive();
     });
   });
 }
@@ -396,19 +499,19 @@ async function openLeague(code) {
 
   // Members board — server already sorts by points (then progress, name).
   const members = data.members;
-  document.getElementById("league-note").textContent = data.resultsScored
-    ? `League table by points — ${data.resultsScored} match${data.resultsScored === 1 ? "" : "es"} scored so far.`
-    : "No results in yet — the table ranks by points once matches are played.";
-  let html = `<tr><th>#</th><th>Player</th><th>Pts</th><th>Champion</th><th>Predicted</th></tr>`;
+  document.getElementById("league-note").innerHTML = data.resultsScored
+    ? `Ranked by total points — ${data.resultsScored} match${data.resultsScored === 1 ? "" : "es"} scored so far. <b>Tour</b> = locked pre-tournament bracket · <b>Live</b> = continuous per-match picks.`
+    : "No results in yet. <b>Tour</b> = your locked bracket · <b>Live</b> = continuous per-match picks.";
+  let html = `<tr><th>#</th><th>Player</th><th>Tour</th><th>Live</th><th>Total</th></tr>`;
   members.forEach((m, i) => {
-    const s = m.summary || {};
+    const pts = m.points || { tournament: 0, live: 0, total: 0 };
     const me = currentUser && m.userId === currentUser.id ? ' class="me"' : "";
     html += `<tr${me}>
       <td>${i + 1}</td>
       <td>${escapeHTML(m.displayName)}${me ? " (you)" : ""}</td>
-      <td><b>${m.points || 0}</b></td>
-      <td>${s.champion ? teamHTML(s.champion) : "—"}</td>
-      <td>${s.predicted || 0}/${s.total || 72}</td>
+      <td>${pts.tournament}</td>
+      <td>${pts.live}</td>
+      <td><b>${pts.total}</b></td>
     </tr>`;
   });
   document.getElementById("league-board").innerHTML = html;
@@ -639,9 +742,11 @@ function renderGroups() {
     inp.addEventListener("keydown", onScoreKeydown);
     inp.addEventListener("focus", () => inp.select());
   });
+  applyTournamentLock();
 }
 
 function onScoreInput(e) {
+  if (LOCKS.tournamentLocked) return;
   const inp = e.target;
   const mid = inp.dataset.mid, side = inp.dataset.side;
   const sc = state.groupScores[mid] || {};
@@ -785,12 +890,12 @@ async function renderResults() {
 
     // your prediction + points
     let predLine = "";
-    const p = state.groupScores[f.id];
+    const p = LIVE_SCORES[f.id];
     if (p && p.home != null && p.away != null) {
-      const pts = MYPOINTS.perMatch ? MYPOINTS.perMatch[f.id] : undefined;
+      const pts = MYPOINTS.live?.perMatch ? MYPOINTS.live.perMatch[f.id] : undefined;
       const ptsTxt = (hasScore && pts != null)
         ? ` <span class="pts pts${pts}">+${pts}</span>` : "";
-      predLine = `<div class="your-pick">Your pick: <b>${p.home}–${p.away}</b>${ptsTxt}</div>`;
+      predLine = `<div class="your-pick">Your live pick: <b>${p.home}–${p.away}</b>${ptsTxt}</div>`;
     }
 
     html += `<div class="res-block">
@@ -862,6 +967,7 @@ function koTeamEl(mid, team, placeholder, winner, clickable) {
   return div;
 }
 function pickWinner(mid, team) {
+  if (LOCKS.tournamentLocked) return;
   if (state.koPicks[String(mid)] === team) delete state.koPicks[String(mid)];
   else state.koPicks[String(mid)] = team;
   saveState();

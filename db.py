@@ -58,6 +58,12 @@ def init_db():
                 PRIMARY KEY (league_id, user_id)
             );
 
+            CREATE TABLE IF NOT EXISTS live_predictions (
+                user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                scores  TEXT NOT NULL,   -- JSON {match_id: {home, away}}
+                updated INTEGER NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS results (
                 match_id TEXT PRIMARY KEY,   -- 'G-A-1' for groups, 'K-73' for knockout
                 home     INTEGER,
@@ -245,6 +251,37 @@ def set_verified(user_id):
 def delete_user(user_id):
     with _lock, _conn() as conn:
         conn.execute("DELETE FROM users WHERE id=?", (user_id,))
+
+
+# --------------------------------------------------------------- live predictions
+def save_live(user_id, scores, updated):
+    with _lock, _conn() as conn:
+        conn.execute(
+            """INSERT INTO live_predictions(user_id,scores,updated) VALUES(?,?,?)
+               ON CONFLICT(user_id) DO UPDATE SET scores=excluded.scores, updated=excluded.updated""",
+            (user_id, json.dumps(scores), updated),
+        )
+
+
+def get_live(user_id):
+    with _conn() as conn:
+        r = conn.execute(
+            "SELECT scores FROM live_predictions WHERE user_id=?", (user_id,)
+        ).fetchone()
+    return json.loads(r["scores"]) if r else {}
+
+
+def get_league_member_live(league_id):
+    """Map user_id -> live scores dict for everyone in the league."""
+    with _conn() as conn:
+        rows = conn.execute(
+            """SELECT m.user_id, l.scores AS scores
+               FROM league_members m
+               LEFT JOIN live_predictions l ON l.user_id = m.user_id
+               WHERE m.league_id = ?""",
+            (league_id,),
+        ).fetchall()
+    return {r["user_id"]: (json.loads(r["scores"]) if r["scores"] else {}) for r in rows}
 
 
 # --------------------------------------------------------------- results

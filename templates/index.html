@@ -28,6 +28,7 @@
 
   <nav class="tabs">
     <button class="tab active" data-tab="predictor">Predictor</button>
+    <button class="tab" data-tab="live">Live Picks</button>
     <button class="tab" data-tab="results">Results</button>
     <button class="tab" data-tab="leagues">My Leagues</button>
     <button class="tab admin-only hidden" data-tab="admin">⚙️ Admin</button>
@@ -35,6 +36,7 @@
 
   <main>
     <section id="tab-predictor" class="tab-panel active">
+      <div id="predictor-lock" class="lockbar hidden"></div>
       <div class="subtoggle">
         <button class="subtab active" data-sub="groups">Group Stage</button>
         <button class="subtab" data-sub="knockout">Knockout Bracket</button>
@@ -55,6 +57,15 @@
         <div id="ko-notice" class="notice hidden"></div>
         <div id="bracket" class="bracket"></div>
       </div>
+    </section>
+
+    <section id="tab-live" class="tab-panel">
+      <div class="predictions-head">
+        <h2>Live Picks</h2>
+        <p class="hint">Predict each game right up to kick-off — every match locks when it starts. This is separate from your locked Tournament bracket, so you can start anytime (great if you joined late). Saves automatically.</p>
+      </div>
+      <div id="live-points" class="live-points"></div>
+      <div id="live-list"></div>
     </section>
 
     <section id="tab-results" class="tab-panel">

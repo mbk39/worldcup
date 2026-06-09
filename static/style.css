@@ -424,3 +424,30 @@ table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .ares-row { grid-template-columns: 1fr 40px 40px; }
   .ares-row .ares-st, .ares-row .ares-sh, .ares-row .ares-sa { grid-column: span 3; }
 }
+
+/* ===================== Lock banner + Live Picks ===================== */
+.lockbar {
+  padding: 11px 16px; border-radius: 10px; margin-bottom: 16px; font-size: 13px;
+  background: rgba(56,189,248,.10); border: 1px solid #38bdf855; color: var(--text);
+}
+.lockbar.locked { background: rgba(248,113,113,.12); border-color: #f8717155; }
+
+.live-points {
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+  padding: 10px 14px; margin-bottom: 14px; font-size: 14px; color: var(--muted);
+}
+.live-points b { color: var(--accent); font-size: 16px; }
+
+.live-meta {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  font-size: 11px; color: var(--muted); margin: 8px 0 1px;
+}
+.live-meta .when { white-space: nowrap; }
+.lockchip { font-size: 10px; color: var(--muted); }
+#live-list .fixture { padding: 2px 4px 8px; }
+#live-list .fixture.locked input { opacity: .5; }
+.locked-pick {
+  font-weight: 700; font-variant-numeric: tabular-nums; color: var(--muted);
+  padding: 4px 8px; white-space: nowrap;
+}
+#groups-grid input:disabled { opacity: .55; cursor: not-allowed; }

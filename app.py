@@ -24,6 +24,7 @@ Leagues (login required):
   DELETE /api/leagues/<code>  -> delete (owner only)
 """
 
+import datetime
 import os
 import re
 import secrets
@@ -52,9 +53,38 @@ app.config.update(
 )
 
 db.init_db()
-_FIXTURE_IDS = [f["id"] for f in build_group_fixtures()]
+_GROUP_FIXTURES = build_group_fixtures()
+_FIXTURE_IDS = [f["id"] for f in _GROUP_FIXTURES]
 _KO_IDS = [f"K-{n}" for n in (list(R32) + list(R16) + list(QF) + list(SF) + list(FINAL) + [103])]
 _VALID_MATCH_IDS = set(_FIXTURE_IDS) | set(_KO_IDS)
+
+_BST = datetime.timezone(datetime.timedelta(hours=1))   # UK summer time
+
+
+def _kickoff_epoch(date_str, time_str):
+    dt = datetime.datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
+    return int(dt.replace(tzinfo=_BST).timestamp())
+
+
+# match_id -> kickoff (unix seconds). Group stage only (knockout dates TBD).
+_KICKOFFS = {f["id"]: _kickoff_epoch(f["date"], f["time"])
+             for f in _GROUP_FIXTURES if f.get("date") and f.get("time")}
+_TOURNAMENT_LOCK = min(_KICKOFFS.values()) if _KICKOFFS else 4102444800
+
+
+def _now():
+    """Current unix time, overridable with WC_NOW for testing locks."""
+    override = os.environ.get("WC_NOW")
+    return int(override) if override else int(time.time())
+
+
+def _locked_match_ids(now=None):
+    now = _now() if now is None else now
+    return {mid for mid, ko in _KICKOFFS.items() if now >= ko}
+
+
+def _tournament_locked(now=None):
+    return (_now() if now is None else now) >= _TOURNAMENT_LOCK
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _ADMIN_EMAILS = {
     e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()
@@ -227,6 +257,17 @@ def api_simulate():
     return jsonify(simulate(state))
 
 
+@app.route("/api/locks")
+def api_locks():
+    now = _now()
+    return jsonify({
+        "now": now,
+        "tournamentLocked": now >= _TOURNAMENT_LOCK,
+        "tournamentLockTime": _TOURNAMENT_LOCK,
+        "lockedMatches": sorted(_locked_match_ids(now)),
+    })
+
+
 # --------------------------------------------------------------- auth
 @app.route("/api/auth/me")
 def api_me():
@@ -316,6 +357,8 @@ def api_get_prediction(user):
 @app.route("/api/prediction", methods=["POST"])
 @login_required
 def api_save_prediction(user):
+    if _tournament_locked():
+        return jsonify({"error": "Tournament predictions locked — the tournament has started."}), 403
     body = request.get_json(force=True, silent=True) or {}
     state = body.get("state") or {}
     clean = {
@@ -336,9 +379,40 @@ def api_results():
 @app.route("/api/me/points")
 @login_required
 def api_my_points(user):
+    results = db.get_all_results()
     rec = db.get_prediction(user["id"])
-    pts = scoring.compute_points(rec["state"] if rec else None, db.get_all_results())
-    return jsonify(pts)
+    tournament = scoring.compute_points(rec["state"] if rec else None, results)
+    live = scoring.compute_points({"groupScores": db.get_live(user["id"])}, results)
+    return jsonify({"tournament": tournament, "live": live})
+
+
+@app.route("/api/live", methods=["GET"])
+@login_required
+def api_get_live(user):
+    return jsonify({"scores": db.get_live(user["id"])})
+
+
+@app.route("/api/live", methods=["POST"])
+@login_required
+def api_save_live(user):
+    body = request.get_json(force=True, silent=True) or {}
+    incoming = body.get("scores") or {}
+    locked = _locked_match_ids()
+    existing = db.get_live(user["id"])
+    rejected = 0
+    for mid, sc in incoming.items():
+        if mid not in _KICKOFFS:        # group-stage matches only (for now)
+            continue
+        if mid in locked:               # match already kicked off — can't change
+            rejected += 1
+            continue
+        h, a = _parse_score((sc or {}).get("home")), _parse_score((sc or {}).get("away"))
+        if h is None and a is None:
+            existing.pop(mid, None)
+        else:
+            existing[mid] = {"home": h, "away": a}
+    db.save_live(user["id"], existing, int(time.time()))
+    return jsonify({"ok": True, "scores": existing, "rejected": rejected})
 
 
 @app.route("/api/feed/results", methods=["POST"])
@@ -417,11 +491,14 @@ def api_league_detail(user, code):
         return jsonify({"error": "You're not a member of this league."}), 403
     results = db.get_all_results()
     members = db.league_members(lg["id"])
-    states = {m["userId"]: m["state"] for m in db.get_league_member_states(lg["id"])}
+    tour_states = {m["userId"]: m["state"] for m in db.get_league_member_states(lg["id"])}
+    live_states = db.get_league_member_live(lg["id"])
     for m in members:
-        m["points"] = scoring.compute_points(states.get(m["userId"]), results)["total"]
-    members.sort(key=lambda m: (-m["points"],
-                                -((m.get("summary") or {}).get("predicted") or 0),
+        uid = m["userId"]
+        t = scoring.compute_points(tour_states.get(uid), results)["total"]
+        liv = scoring.compute_points({"groupScores": live_states.get(uid, {})}, results)["total"]
+        m["points"] = {"tournament": t, "live": liv, "total": t + liv}
+    members.sort(key=lambda m: (-m["points"]["total"], -m["points"]["tournament"],
                                 m["displayName"].lower()))
     return jsonify({
         "code": lg["code"], "name": lg["name"],
