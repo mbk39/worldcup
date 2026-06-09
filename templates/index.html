@@ -18,17 +18,20 @@
     </div>
     <div class="header-actions">
       <div id="champion-banner" class="champion hidden"></div>
-      <button id="theme-toggle" class="btn ghost icon-btn" title="Toggle light / dark">🌙</button>
-      <button id="randomfill-btn" class="btn ghost">🎲 Random fill</button>
       <button id="save-btn" class="btn primary">Save prediction</button>
-      <!-- logged out -->
-      <button id="login-btn" class="btn">Log in / Sign up</button>
-      <!-- logged in -->
-      <div id="user-menu" class="user-menu hidden">
-        <span id="user-name" class="user-name"></span>
-        <button id="logout-btn" class="btn ghost">Log out</button>
+      <button id="more-btn" class="btn ghost more-btn" aria-label="More options" aria-expanded="false">⋯</button>
+      <div class="more-wrap" id="more-wrap">
+        <button id="theme-toggle" class="btn ghost icon-btn" title="Toggle light / dark">🌙</button>
+        <button id="randomfill-btn" class="btn ghost">🎲 Random fill</button>
+        <!-- logged out -->
+        <button id="login-btn" class="btn">Log in / Sign up</button>
+        <!-- logged in -->
+        <div id="user-menu" class="user-menu hidden">
+          <span id="user-name" class="user-name"></span>
+          <button id="logout-btn" class="btn ghost">Log out</button>
+        </div>
+        <button id="reset-btn" class="btn ghost">Reset</button>
       </div>
-      <button id="reset-btn" class="btn ghost">Reset</button>
     </div>
   </header>
 

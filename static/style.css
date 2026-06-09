@@ -73,9 +73,14 @@ header {
   backdrop-filter: blur(10px);
   box-shadow: var(--shadow);
 }
+.title { min-width: 0; }
 .title h1 { margin: 0; font-size: 21px; font-weight: 800; letter-spacing: -.3px; }
 .title .sub { color: var(--muted); font-size: 12.5px; }
-.header-actions { display: flex; align-items: center; gap: 10px; }
+.header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; position: relative; }
+/* Desktop: the "More" wrapper is transparent — its children sit inline in the
+   action bar exactly as before. The kebab toggle is hidden. */
+.more-wrap { display: contents; }
+.more-btn { display: none; }
 
 .champion {
   background: linear-gradient(90deg, var(--gold), #f59e0b);
@@ -167,7 +172,19 @@ header {
 .tab:hover { color: var(--text); background: rgba(128,128,128,.12); }
 .tab.active { color: var(--on-accent); background: linear-gradient(180deg,var(--accent2),var(--accent)); box-shadow: 0 3px 12px rgba(251,146,60,.25); }
 
-main { padding: 22px 28px 70px; max-width: 1320px; margin: 0 auto; }
+main { padding: 22px 28px 70px; max-width: 1400px; margin: 0 auto; }
+
+/* Wide screens: compact the fixtures so the denser 4 × 3 group grid (defined
+   just after .groups-grid below) stays readable in the narrower cards. */
+@media (min-width: 1300px) {
+  .groups-grid .fixture { gap: 4px; }
+  .groups-grid .fixture-line { gap: 4px; }
+  .groups-grid .fixture .score { gap: 2px; }
+  .groups-grid .fixture input { width: 30px; padding: 6px 0; }
+  .groups-grid .chan-left { width: 38px; min-width: 38px; max-width: 38px; font-size: 8px; padding: 2px; overflow: hidden; }
+  .groups-grid .fixture .flag-img { width: 18px; height: 13px; margin-right: 4px; }
+  .groups-grid .fixture .home, .groups-grid .fixture .away { font-size: 12px; }
+}
 .section-h { margin: 26px 0 10px; font-size: 16px; font-weight: 700; }
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }
@@ -201,6 +218,10 @@ main { padding: 22px 28px 70px; max-width: 1320px; margin: 0 auto; }
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
   gap: 18px;
+}
+/* Wide screens: force a dense 4 × 3 layout (12 groups). */
+@media (min-width: 1300px) {
+  .groups-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
 .group-card {
@@ -769,4 +790,119 @@ table { width: 100%; border-collapse: collapse; font-size: 13px; }
 @media (max-width: 620px) {
   .vm-row { grid-template-columns: 1fr; gap: 3px; }
   .vm-sub { text-align: left; }
+}
+
+/* ============================================================
+   Responsive / mobile
+   ============================================================ */
+@media (max-width: 600px) {
+  /* tighter page gutters */
+  main { padding: 16px 12px 64px; }
+  header { padding: 12px 14px; gap: 8px; flex-wrap: wrap; }
+  .tabs { padding: 8px 10px; }
+
+  /* header stacks: title on top, action bar full-width below */
+  .title { flex: 1 1 100%; }
+  .title h1 { font-size: 17px; line-height: 1.2; }
+  .title .sub { font-size: 11.5px; }
+  .header-actions { flex: 1 1 100%; gap: 8px; }
+
+  .champion { padding: 5px 11px; font-size: 12px; }
+
+  /* compact "More" overflow menu */
+  .more-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 18px; line-height: 1; padding: 9px 13px;
+  }
+  .more-btn.active { border-color: var(--accent); color: var(--accent); }
+  .more-wrap {
+    display: none; position: absolute; top: calc(100% + 6px); right: 0;
+    flex-direction: column; align-items: stretch; gap: 6px; min-width: 210px;
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 8px; box-shadow: var(--shadow); z-index: 60;
+  }
+  .more-wrap.open { display: flex; }
+  .more-wrap .btn { width: 100%; justify-content: center; }
+  .user-menu:not(.hidden) { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+  .user-name { text-align: center; padding: 4px 0; }
+
+  /* touch-friendly hit targets */
+  .btn { min-height: 42px; }
+  .tab { min-height: 40px; }
+
+  /* tabs: single-row horizontal scroll, never clipped */
+  .tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab { flex: 0 0 auto; white-space: nowrap; padding: 9px 13px; }
+
+  /* one column for groups / prediction cards */
+  .groups-grid, .predictions-grid { grid-template-columns: 1fr; }
+  .group-card { padding: 13px; }
+  .standings { font-size: 12px; }
+
+  /* wide tables scroll inside themselves instead of widening the page */
+  #league-board, .admin-table, #third-table {
+    display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; white-space: nowrap;
+  }
+
+  /* predictor bracket: horizontal scroll rather than squeezing 7 columns */
+  .bracket2 { overflow-x: auto; -webkit-overflow-scrolling: touch; gap: 10px; }
+  .bk-col { flex: 0 0 152px; min-width: 152px; }
+  .bk-finalcol { flex: 0 0 168px; min-width: 168px; }
+
+  /* control-room stats: 2 up, wildcard spans full width */
+  .stat-row { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .stat-v { font-size: 18px; }
+  .stat-v.wild { letter-spacing: 1.5px; font-size: 14px; word-break: break-word; }
+  .champ-stat { grid-column: span 2; }
+
+  /* map */
+  .venue-map { height: 280px; }
+  .venue-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+
+  /* compact fixture so long names (South Africa, Switzerland) still fit
+     full-width, while keeping inputs tall enough to tap. The channel chip is
+     fixed-width so BBC One / ITV1 rows all share the same fixture width. */
+  .fixture { gap: 5px; }
+  .fixture-line { gap: 5px; }
+  .fixture .score { gap: 3px; }
+  .fixture input { width: 34px; padding: 8px 0; }
+  .chan-left { width: 42px; min-width: 42px; max-width: 42px; padding: 2px 3px; font-size: 8.5px; overflow: hidden; }
+  .fixture .flag-img { width: 20px; height: 15px; margin-right: 5px; }
+
+  /* full-width segmented toggles */
+  .subtoggle { display: flex; width: 100%; }
+  .subtab { flex: 1 1 0; padding: 10px 6px; text-align: center; }
+
+  /* league header wraps */
+  .league-detail-head { flex-wrap: wrap; gap: 8px; }
+  .league-detail-head h2 { font-size: 18px; }
+
+  /* knockout decider wraps tidily */
+  .ko-decider { gap: 7px; padding: 7px 9px; }
+
+  /* live meta line can wrap (long advancer notes) */
+  .live-meta { flex-wrap: wrap; }
+
+  /* admin knockout results-entry rows stack instead of overflowing */
+  .ares-row.ko { grid-template-columns: 44px 44px 1fr; gap: 6px; }
+  .ares-row.ko .ares-teams,
+  .ares-row.ko .ako-w { grid-column: 1 / -1; }
+}
+
+@media (max-width: 430px) {
+  main { padding: 14px 10px 58px; }
+  .title h1 { font-size: 15.5px; }
+  .title .sub { font-size: 11px; }
+  .venue-grid { grid-template-columns: 1fr; }
+  .bk-col { flex: 0 0 142px; min-width: 142px; }
+  .bk-finalcol { flex: 0 0 158px; min-width: 158px; }
+  .stat-row { gap: 8px; }
+  .stat { padding: 10px 11px; }
+
+  /* keep the standings table within the card on the smallest phones */
+  .standings { font-size: 11px; }
+  .standings th, .standings td { padding: 4px 2px; }
+  .standings .flag-img { width: 18px; height: 13px; margin-right: 4px; }
+  .group-card { padding: 11px; }
 }

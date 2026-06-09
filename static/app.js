@@ -592,6 +592,30 @@ function wireHeader() {
   document.getElementById("logout-btn").addEventListener("click", logout);
   document.getElementById("randomfill-btn").addEventListener("click", () => randomFill(true));
   document.getElementById("randomscores-btn").addEventListener("click", () => randomFill(false));
+  wireMoreMenu();
+}
+
+// Compact "More" overflow menu (mobile). Pure presentation — no logic change.
+function wireMoreMenu() {
+  const moreBtn = document.getElementById("more-btn");
+  const wrap = document.getElementById("more-wrap");
+  if (!moreBtn || !wrap) return;
+  const setOpen = (open) => {
+    wrap.classList.toggle("open", open);
+    moreBtn.classList.toggle("active", open);
+    moreBtn.setAttribute("aria-expanded", open ? "true" : "false");
+  };
+  moreBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    setOpen(!wrap.classList.contains("open"));
+  });
+  // Close after picking any action inside the menu.
+  wrap.addEventListener("click", (e) => { if (e.target.closest("button")) setOpen(false); });
+  // Close on outside click / Escape.
+  document.addEventListener("click", (e) => {
+    if (!wrap.contains(e.target) && e.target !== moreBtn) setOpen(false);
+  });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") setOpen(false); });
 }
 
 const _rnd = n => Math.floor(Math.random() * n);
