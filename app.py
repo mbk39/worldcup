@@ -33,7 +33,8 @@ import time
 from functools import wraps
 
 from flask import (
-    Flask, jsonify, request, render_template, session, redirect, url_for, abort
+    Flask, jsonify, request, render_template, session, redirect, url_for, abort,
+    send_from_directory,
 )
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -130,6 +131,12 @@ def _load_secret_key():
 
 
 app.secret_key = _load_secret_key()
+
+# Uploaded league logos / sponsor images.
+UPLOAD_DIR = os.environ.get("WC_UPLOADS", os.path.join(app.root_path, "uploads"))
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+app.config["MAX_CONTENT_LENGTH"] = 3 * 1024 * 1024  # 3 MB per upload
+_ALLOWED_IMG = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
 
 
 # --------------------------------------------------------------- helpers
@@ -263,6 +270,25 @@ def index():
 @app.route("/join/<code>")
 def join_link(code):
     return redirect("/?join=" + re.sub(r"[^A-Za-z0-9]", "", code).upper()[:6])
+
+
+@app.route("/uploads/<path:name>")
+def serve_upload(name):
+    return send_from_directory(UPLOAD_DIR, name)
+
+
+@app.route("/api/upload", methods=["POST"])
+@login_required
+def api_upload(user):
+    f = request.files.get("file")
+    if not f or not f.filename:
+        return jsonify({"error": "No file provided."}), 400
+    ext = os.path.splitext(f.filename)[1].lower()
+    if ext not in _ALLOWED_IMG:
+        return jsonify({"error": "Only PNG, JPG, GIF or WEBP images are allowed."}), 400
+    name = secrets.token_hex(10) + ext
+    f.save(os.path.join(UPLOAD_DIR, name))
+    return jsonify({"ok": True, "url": "/uploads/" + name})
 
 
 @app.route("/api/data")
@@ -602,7 +628,7 @@ def api_league_detail(user, code):
 
 def _clean_img_url(v):
     v = (v or "").strip()
-    return v[:600] if re.match(r"^https?://", v) else ""
+    return v[:600] if (re.match(r"^https?://", v) or v.startswith("/uploads/")) else ""
 
 
 @app.route("/api/leagues/<code>/edit", methods=["POST"])

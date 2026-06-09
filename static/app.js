@@ -652,6 +652,17 @@ function wireLeagues() {
   document.getElementById("edit-save").addEventListener("click", saveLeagueEdit);
   document.getElementById("edit-cancel").addEventListener("click", () =>
     document.getElementById("league-edit").classList.add("hidden"));
+  document.getElementById("edit-logo-file").addEventListener("change", async e => {
+    const url = await uploadImage(e.target.files[0], e.target);
+    if (url) document.getElementById("edit-logo").value = url;
+  });
+  document.getElementById("edit-sponsor-file").addEventListener("change", async e => {
+    const url = await uploadImage(e.target.files[0], e.target);
+    if (url) {
+      const ta = document.getElementById("edit-sponsors");
+      ta.value = (ta.value.trim() ? ta.value.replace(/\s*$/, "") + "\n" : "") + url;
+    }
+  });
   document.getElementById("join-code").addEventListener("keydown",
     e => { if (e.key === "Enter") joinLeague(); });
   document.getElementById("league-name").addEventListener("keydown",
@@ -753,6 +764,18 @@ function openLeagueEdit(data) {
   document.getElementById("edit-sponsors").value =
     (data.sponsors || []).map(s => [s.img, s.link, s.name].filter(Boolean).join(" | ")).join("\n");
   document.getElementById("league-edit").classList.remove("hidden");
+}
+
+async function uploadImage(file, inputEl) {
+  if (!file) return null;
+  const fd = new FormData();
+  fd.append("file", file);
+  const res = await fetch("/api/upload", { method: "POST", body: fd });
+  let data = {};
+  try { data = await res.json(); } catch (_) {}
+  if (inputEl) inputEl.value = "";   // reset so the same file can be re-picked
+  if (!res.ok) { alert(data.error || "Upload failed (max 3 MB)."); return null; }
+  return data.url;
 }
 
 async function saveLeagueEdit() {

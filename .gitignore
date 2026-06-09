@@ -11,4 +11,5 @@ predictions.json
 predictions.json.imported
 worldcup.db
 secret_key.txt
+uploads/
 *.tmp
