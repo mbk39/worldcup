@@ -125,13 +125,33 @@ async function init() {
   wireSubToggle();
   wireLiveSubToggle();
   handleVerifyRedirect();
+  parseJoin();
   await refreshAuth();     // loads server prediction if logged in
   await fetchLive();
   await fetchResults();
   await fetchMyPoints();
   await simulate();
   applyTournamentLock();
+  await processPendingJoin();
   startLiveRefresh();
+}
+
+let pendingJoin = null;
+function parseJoin() {
+  const p = new URLSearchParams(location.search);
+  if (p.has("join")) {
+    pendingJoin = (p.get("join") || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
+    history.replaceState({}, "", location.pathname);
+  }
+}
+async function processPendingJoin() {
+  if (!pendingJoin || !currentUser) return;   // if not logged in, handled after auth
+  const code = pendingJoin; pendingJoin = null;
+  const { ok, data } = await api("POST", "/api/leagues/join", { code });
+  if (!ok) { alert(data.error || "Could not join that league."); return; }
+  await refreshLeagues();
+  document.querySelector('.tab[data-tab="leagues"]').click();
+  openLeague(code);
 }
 
 // Poll for new results so scores/leaderboards update without a manual reload.
@@ -483,6 +503,7 @@ function wireAuthModal() {
     closeAuth();
     await refreshAuth();
     await refreshLeagues();
+    await processPendingJoin();
   });
 
   document.getElementById("signup-form").addEventListener("submit", async e => {
@@ -500,6 +521,7 @@ function wireAuthModal() {
     }
     await refreshAuth();        // dev auto-verify: logs in + closes the gate
     await refreshLeagues();
+    await processPendingJoin();
   });
 }
 
@@ -542,8 +564,16 @@ function wireLeagues() {
     const code = document.getElementById("league-detail-code").textContent;
     navigator.clipboard?.writeText(code);
     const b = document.getElementById("copy-code-btn");
-    b.textContent = "Copied!"; setTimeout(() => (b.textContent = "Copy"), 1200);
+    b.textContent = "Copied!"; setTimeout(() => (b.textContent = "Copy code"), 1200);
   });
+  document.getElementById("copy-invite-btn").addEventListener("click", () => {
+    const code = document.getElementById("league-detail-code").textContent;
+    navigator.clipboard?.writeText(location.origin + "/join/" + code);
+    const b = document.getElementById("copy-invite-btn");
+    b.textContent = "Link copied!"; setTimeout(() => (b.textContent = "Copy invite link"), 1400);
+  });
+  document.getElementById("league-member-close").addEventListener("click", () =>
+    document.getElementById("league-member").classList.add("hidden"));
   document.getElementById("join-code").addEventListener("keydown",
     e => { if (e.key === "Enter") joinLeague(); });
   document.getElementById("league-name").addEventListener("keydown",
@@ -640,12 +670,59 @@ function renderLeagueBoard() {
     ((b.points?.[track] || 0) - (a.points?.[track] || 0)) || a.displayName.localeCompare(b.displayName));
   let html = `<tr><th>#</th><th>Player</th><th>Points</th></tr>`;
   members.forEach((m, i) => {
-    const me = currentUser && m.userId === currentUser.id ? ' class="me"' : "";
-    html += `<tr${me}><td>${i + 1}</td>
+    const me = currentUser && m.userId === currentUser.id ? "me" : "";
+    html += `<tr class="${me} clickable-row" data-uid="${m.userId}" data-name="${escapeHTML(m.displayName)}">
+      <td>${i + 1}</td>
       <td>${escapeHTML(m.displayName)}${me ? " (you)" : ""}</td>
       <td><b>${m.points?.[track] || 0}</b></td></tr>`;
   });
-  document.getElementById("league-board").innerHTML = html;
+  const board = document.getElementById("league-board");
+  board.innerHTML = html;
+  board.querySelectorAll("tr.clickable-row").forEach(tr =>
+    tr.addEventListener("click", () => openMember(+tr.dataset.uid, tr.dataset.name)));
+  document.getElementById("league-member").classList.add("hidden");
+}
+
+async function openMember(uid, name) {
+  if (!LEAGUE_DATA) return;
+  await fetchActualBracket();
+  const { ok, data } = await api("GET",
+    `/api/leagues/${encodeURIComponent(LEAGUE_DATA.code)}/member/${uid}`);
+  if (!ok) { alert(data.error || "Could not load predictions."); return; }
+
+  const fxById = {};
+  DATA.fixtures.forEach(f => (fxById[f.id] = f));
+  const teamsFor = mid => {
+    if (mid.startsWith("G-")) { const f = fxById[mid]; return f ? [f.home, f.away] : ["?", "?"]; }
+    const a = ACTUAL_BRACKET[mid.slice(2)] || {}; return [a.teamA || "?", a.teamB || "?"];
+  };
+  const line = (mid, sc) => {
+    const [h, a] = teamsFor(mid);
+    const adv = sc.adv ? ` · adv: ${escapeHTML(sc.adv)}` : "";
+    return `<div class="mp-row">${teamHTML(h)} <b>${sc.home ?? "–"}–${sc.away ?? "–"}</b> ${teamHTML(a)}${adv}</div>`;
+  };
+
+  let html = "";
+  // Tournament bracket (only revealed after the first kick-off)
+  if (data.tournament) {
+    const sim = (await api("POST", "/api/simulate", data.tournament)).data;
+    html += `<div class="mp-sec"><b>Pre-tournament bracket</b> — predicted champion: ` +
+      `${sim.champion ? teamHTML(sim.champion) : "—"}</div>`;
+  } else {
+    html += `<div class="mp-sec">🔒 Pre-tournament bracket hidden until the tournament starts.</div>`;
+  }
+  const grp = Object.entries(data.group || {});
+  html += `<div class="mp-sec"><b>Rolling group picks</b> ${grp.length ? "" : "<span class='hint'>— none revealed yet (matches reveal as they kick off)</span>"}</div>`;
+  grp.sort().forEach(([mid, sc]) => (html += line(mid, sc)));
+  const ko = Object.entries(data.knockout || {});
+  if (ko.length) {
+    html += `<div class="mp-sec"><b>Knockout picks</b></div>`;
+    ko.sort((x, y) => +x[0].slice(2) - +y[0].slice(2)).forEach(([mid, sc]) => (html += line(mid, sc)));
+  }
+
+  document.getElementById("league-member-title").textContent = `${name}'s predictions`;
+  document.getElementById("league-member-body").innerHTML = html;
+  document.getElementById("league-member").classList.remove("hidden");
 }
 
 async function leaveLeague(code) {

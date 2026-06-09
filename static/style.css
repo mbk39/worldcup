@@ -464,3 +464,10 @@ table { width: 100%; border-collapse: collapse; font-size: 13px; }
   background: var(--bg2); border: 1px solid var(--accent2); color: var(--text);
   border-radius: 6px; padding: 4px 8px; font-size: 12px;
 }
+
+/* League: clickable rows + member predictions panel */
+.clickable-row { cursor: pointer; }
+.clickable-row:hover td { background: var(--bg2); }
+.mp-sec { margin: 12px 0 4px; font-size: 13px; color: var(--accent2); }
+.mp-row { font-size: 13px; padding: 3px 0; border-top: 1px solid var(--line); }
+.mp-row b { margin: 0 4px; }

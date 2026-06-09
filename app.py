@@ -249,6 +249,11 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/join/<code>")
+def join_link(code):
+    return redirect("/?join=" + re.sub(r"[^A-Za-z0-9]", "", code).upper()[:6])
+
+
 @app.route("/api/data")
 def api_data():
     return jsonify({
@@ -563,6 +568,31 @@ def api_league_detail(user, code):
         "resultsScored": group_done,
         "knockoutReady": group_done >= len(_FIXTURE_IDS),
     })
+
+
+@app.route("/api/leagues/<code>/member/<int:uid>")
+@login_required
+def api_league_member(user, code, uid):
+    lg = db.get_league_by_code(code)
+    if not lg:
+        return jsonify({"error": "No league found with that code."}), 404
+    if not db.is_member(lg["id"], user["id"]) or not db.is_member(lg["id"], uid):
+        return jsonify({"error": "Not allowed."}), 403
+    target = db.get_user_by_id(uid)
+    if not target:
+        return jsonify({"error": "Not found."}), 404
+
+    locked = _locked_match_ids()
+    # Tournament bracket only becomes visible once it locks (first kick-off).
+    tournament = None
+    if _tournament_locked():
+        rec = db.get_prediction(uid)
+        tournament = rec["state"] if rec else {"groupScores": {}, "koPicks": {}}
+    # Per-match picks only visible for matches that have kicked off.
+    group = {mid: sc for mid, sc in db.get_live(uid).items() if mid in locked}
+    knockout = {mid: sc for mid, sc in db.get_live_ko(uid).items() if mid in locked}
+    return jsonify({"displayName": target["display_name"], "isYou": uid == user["id"],
+                    "tournament": tournament, "group": group, "knockout": knockout})
 
 
 @app.route("/api/leagues/<code>/leave", methods=["POST"])

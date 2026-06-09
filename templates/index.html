@@ -122,7 +122,8 @@
             <div class="code-share">
               <span class="code-label">Join code</span>
               <span id="league-detail-code" class="code-pill"></span>
-              <button id="copy-code-btn" class="btn ghost small">Copy</button>
+              <button id="copy-code-btn" class="btn ghost small">Copy code</button>
+              <button id="copy-invite-btn" class="btn ghost small">Copy invite link</button>
             </div>
           </div>
           <div id="league-detail-actions" class="league-detail-actions"></div>
@@ -132,7 +133,15 @@
             <button class="subtab" data-track="knockout">Knockout</button>
           </div>
           <div id="league-note" class="hint"></div>
+          <p class="hint" id="league-board-hint">Tap a player to see their predictions (revealed only once matches lock).</p>
           <table id="league-board"></table>
+          <div id="league-member" class="admin-members hidden">
+            <div class="admin-members-head">
+              <b id="league-member-title"></b>
+              <button id="league-member-close" class="btn ghost small">Close</button>
+            </div>
+            <div id="league-member-body"></div>
+          </div>
         </div>
       </div>
     </section>
