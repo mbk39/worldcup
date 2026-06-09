@@ -245,6 +245,20 @@ def resolve_bracket(standings, group_scores, ko_picks):
                 "round": round_name, "teamA": a, "teamB": b, "winner": winner,
             }
 
+    # Third-place play-off (match 103): the two losing semi-finalists.
+    def _loser(m):
+        w = m.get("winner")
+        if not w:
+            return None
+        return m["teamA"] if w == m["teamB"] else m["teamB"]
+
+    a103, b103 = _loser(bracket.get(101, {})), _loser(bracket.get(102, {}))
+    pick = ko_picks.get("103")
+    winner = pick if (pick and pick in (a103, b103)) else None
+    if winner:
+        match_winner[103] = winner
+    bracket[103] = {"round": "Third place", "teamA": a103, "teamB": b103, "winner": winner}
+
     return bracket, (third_slot_group or {}), third_team
 
 

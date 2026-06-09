@@ -241,6 +241,11 @@ def _bracket_template():
             matches.append({"id": mid, "labelA": a_lbl, "labelB": b_lbl,
                             "date": ko.get("date"), "time": ko.get("time")})
         rounds.append({"name": name, "matches": matches})
+    # Third-place play-off (match 103) — its own one-match round.
+    ko103 = schedule.ko_info(103) or {}
+    rounds.append({"name": "Third place", "matches": [{
+        "id": 103, "labelA": "Loser SF1", "labelB": "Loser SF2",
+        "date": ko103.get("date"), "time": ko103.get("time")}]})
     return rounds
 
 

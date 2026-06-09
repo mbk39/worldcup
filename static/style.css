@@ -621,3 +621,5 @@ table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .badge-r32 { background: var(--gold); color: #2a1c00; font-weight: 800; font-size: 11px; padding: 2px 9px; border-radius: 6px; }
 .badge-out { background: var(--bg2); color: var(--muted); font-weight: 700; font-size: 11px; padding: 2px 9px; border-radius: 6px; }
 #third-table td.team { text-align: left; }
+
+.bk-tp-label { text-align: center; font-size: 10px; color: var(--muted); margin: 14px 0 6px; text-transform: uppercase; letter-spacing: .5px; }

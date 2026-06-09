@@ -1130,7 +1130,7 @@ function renderStatRow(res) {
   el.innerHTML =
     `<div class="stat"><div class="stat-k">Group picks</div><div class="stat-v">${done} / ${total}</div></div>` +
     `<div class="stat"><div class="stat-k">Groups complete</div><div class="stat-v">${groupsComplete} / 12</div></div>` +
-    `<div class="stat"><div class="stat-k">Bracket picks</div><div class="stat-v">${koPicks} / 31</div></div>` +
+    `<div class="stat"><div class="stat-k">Bracket picks</div><div class="stat-v">${koPicks} / 32</div></div>` +
     `<div class="stat"><div class="stat-k">Wildcard line</div><div class="stat-v wild">${wild}</div></div>` +
     `<div class="stat champ-stat"><div class="stat-k">Champion</div><div class="stat-v">${champ}</div></div>`;
 }
@@ -1335,7 +1335,16 @@ function renderBracket(res) {
   };
   BK_LEFT.forEach(([, ids], i) => fill("bk-L" + i, ids));
   BK_RIGHT.forEach(([, ids], i) => fill("bk-R" + i, ids));
-  fill("bk-final", [104]);
+  const fc = document.getElementById("bk-final");
+  if (fc) {
+    fc.innerHTML = "";
+    fc.appendChild(koMatchEl(104, res.bracket[104] || {}));
+    const tp = document.createElement("div");
+    tp.className = "bk-tp-label";
+    tp.textContent = "3rd place play-off";
+    fc.appendChild(tp);
+    fc.appendChild(koMatchEl(103, res.bracket[103] || {}));
+  }
 }
 
 function koMatchEl(mid, b) {
