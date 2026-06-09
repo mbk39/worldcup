@@ -1,15 +1,16 @@
 "use strict";
 
-const STORAGE_KEY = "wc2026-predictor-v1";
-const NAME_KEY = "wc2026-player-name";
-const PIN_KEY = "wc2026-player-pin";
-let DATA = null;            // static: groups, flags, fixtures, bracket template
+const STORAGE_KEY = "wc2026-predictor-v1";   // local working copy of the bracket
+let DATA = null;
 let state = { groupScores: {}, koPicks: {} };
-let bracketLabels = {};     // mid -> {labelA, labelB}
-let simTimer = null;
+let bracketLabels = {};
+let simTimer = null, serverSaveTimer = null;
+let currentUser = null;
+let verificationEnforced = false;
 
-// ---------------------------------------------------------------- helpers
+// ================================================================ helpers
 function teamHTML(team) {
+  if (!team) return "";
   const code = DATA.flagCodes && DATA.flagCodes[team];
   const img = code
     ? `<img class="flag-img" src="https://flagcdn.com/w40/${code}.png" ` +
@@ -18,12 +19,19 @@ function teamHTML(team) {
     : `<span class="flag">${(DATA.flags && DATA.flags[team]) || "⚽"}</span>`;
   return `${img}<span class="tname">${team}</span>`;
 }
+
 const _DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const _MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const _DOW_LONG = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const _MON_LONG = ["January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"];
 function fmtDate(iso) {
   const [y, m, d] = iso.split("-").map(Number);
-  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
-  return `${_DOW[dow]} ${d} ${_MON[m - 1]}`;
+  return `${_DOW[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]} ${d} ${_MON[m - 1]}`;
+}
+function fmtFullDate(iso) {
+  const [y, m, d] = iso.split("-").map(Number);
+  return `${_DOW_LONG[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]} ${d} ${_MON_LONG[m - 1]}`;
 }
 function chanClass(ch) {
   if (!ch) return "";
@@ -31,16 +39,33 @@ function chanClass(ch) {
   if (ch.startsWith("ITV")) return "itv";
   return "";
 }
-const _DOW_LONG = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-const _MON_LONG = ["January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December"];
-function fmtFullDate(iso) {
-  const [y, m, d] = iso.split("-").map(Number);
-  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
-  return `${_DOW_LONG[dow]} ${d} ${_MON_LONG[m - 1]}`;
+function escapeHTML(s) {
+  return (s || "").replace(/[&<>"']/g, c => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function updatedAgo(ts) {
+  if (!ts) return "";
+  const secs = Math.floor(Date.now() / 1000) - ts;
+  if (secs < 60) return "just now";
+  if (secs < 3600) return Math.floor(secs / 60) + "m ago";
+  if (secs < 86400) return Math.floor(secs / 3600) + "h ago";
+  return Math.floor(secs / 86400) + "d ago";
+}
+async function api(method, url, body) {
+  const res = await fetch(url, {
+    method,
+    headers: body ? { "Content-Type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  let data = {};
+  try { data = await res.json(); } catch (_) {}
+  return { ok: res.ok, status: res.status, data };
 }
 
-function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+function saveState() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  scheduleServerSave();
+}
 function loadState() {
   try {
     const s = JSON.parse(localStorage.getItem(STORAGE_KEY));
@@ -48,9 +73,9 @@ function loadState() {
   } catch (_) {}
 }
 
-// ---------------------------------------------------------------- bootstrap
+// ================================================================ bootstrap
 async function init() {
-  DATA = await (await fetch("/api/data")).json();
+  DATA = (await api("GET", "/api/data")).data;
   DATA.bracket.forEach(r => r.matches.forEach(m => {
     bracketLabels[m.id] = { labelA: m.labelA, labelB: m.labelB };
   }));
@@ -58,21 +83,11 @@ async function init() {
   renderGroups();
   renderBracketSkeleton();
   wireTabs();
-  document.getElementById("reset-btn").addEventListener("click", resetAll);
-  document.getElementById("save-btn").addEventListener("click", savePrediction);
-
-  const nameInput = document.getElementById("player-name");
-  const pinInput = document.getElementById("player-pin");
-  nameInput.value = localStorage.getItem(NAME_KEY) || "";
-  pinInput.value = localStorage.getItem(PIN_KEY) || "";
-  nameInput.addEventListener("change", () =>
-    localStorage.setItem(NAME_KEY, nameInput.value.trim()));
-  pinInput.addEventListener("change", () =>
-    localStorage.setItem(PIN_KEY, pinInput.value.trim()));
-  const saveOnEnter = e => { if (e.key === "Enter") savePrediction(); };
-  nameInput.addEventListener("keydown", saveOnEnter);
-  pinInput.addEventListener("keydown", saveOnEnter);
-
+  wireHeader();
+  wireAuthModal();
+  wireLeagues();
+  handleVerifyRedirect();
+  await refreshAuth();   // loads server prediction if logged in
   await simulate();
 }
 
@@ -83,20 +98,268 @@ function wireTabs() {
       document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
       tab.classList.add("active");
       document.getElementById("tab-" + tab.dataset.tab).classList.add("active");
-      if (tab.dataset.tab === "predictions") loadPredictionsList();
+      if (tab.dataset.tab === "leagues" && currentUser) refreshLeagues();
     });
   });
 }
 
+function wireHeader() {
+  document.getElementById("reset-btn").addEventListener("click", resetAll);
+  document.getElementById("save-btn").addEventListener("click", savePrediction);
+  document.getElementById("login-btn").addEventListener("click", () => openAuth("login"));
+  document.getElementById("logout-btn").addEventListener("click", logout);
+}
+
 function resetAll() {
-  if (!confirm("Clear all predicted scores and bracket picks?")) return;
+  if (!confirm("Clear all your predicted scores and bracket picks?")) return;
   state = { groupScores: {}, koPicks: {} };
   saveState();
   document.querySelectorAll(".fixture input").forEach(i => (i.value = ""));
+  document.querySelectorAll(".fixture").forEach(r => r.classList.remove("half"));
   simulate();
 }
 
-// ---------------------------------------------------------------- group stage
+// ================================================================ auth
+function handleVerifyRedirect() {
+  const p = new URLSearchParams(location.search);
+  if (p.has("verified")) {
+    setTimeout(() => {
+      alert(p.get("verified") === "1"
+        ? "Email confirmed — you're logged in!"
+        : "That confirmation link is invalid or expired.");
+    }, 100);
+    history.replaceState({}, "", location.pathname);
+  }
+}
+
+async function refreshAuth() {
+  const { data } = await api("GET", "/api/auth/me");
+  currentUser = data.user;
+  verificationEnforced = !!data.verificationEnforced;
+  updateAuthUI();
+  if (currentUser) await loadServerPrediction();
+}
+
+function updateAuthUI() {
+  const loggedIn = !!currentUser;
+  document.getElementById("login-btn").classList.toggle("hidden", loggedIn);
+  document.getElementById("user-menu").classList.toggle("hidden", !loggedIn);
+  if (loggedIn) document.getElementById("user-name").textContent = currentUser.displayName;
+  document.getElementById("leagues-gate").classList.toggle("hidden", loggedIn);
+  document.getElementById("leagues-main").classList.toggle("hidden", !loggedIn);
+}
+
+function openAuth(which) {
+  document.getElementById("auth-modal").classList.remove("hidden");
+  switchAuthTab(which || "login");
+}
+function closeAuth() {
+  document.getElementById("auth-modal").classList.add("hidden");
+  hideAuthMsgs();
+}
+function hideAuthMsgs() {
+  document.getElementById("auth-error").classList.add("hidden");
+  document.getElementById("auth-message").classList.add("hidden");
+}
+function authError(msg) {
+  const e = document.getElementById("auth-error");
+  e.textContent = msg; e.classList.remove("hidden");
+  document.getElementById("auth-message").classList.add("hidden");
+}
+function authMessage(msg) {
+  const e = document.getElementById("auth-message");
+  e.textContent = msg; e.classList.remove("hidden");
+  document.getElementById("auth-error").classList.add("hidden");
+}
+function switchAuthTab(which) {
+  hideAuthMsgs();
+  document.querySelectorAll(".auth-tab").forEach(t =>
+    t.classList.toggle("active", t.dataset.auth === which));
+  document.getElementById("login-form").classList.toggle("hidden", which !== "login");
+  document.getElementById("signup-form").classList.toggle("hidden", which !== "signup");
+}
+
+function wireAuthModal() {
+  document.getElementById("auth-close").addEventListener("click", closeAuth);
+  document.getElementById("auth-modal").addEventListener("click", e => {
+    if (e.target.id === "auth-modal") closeAuth();
+  });
+  document.querySelectorAll(".auth-tab").forEach(t =>
+    t.addEventListener("click", () => switchAuthTab(t.dataset.auth)));
+
+  document.getElementById("login-form").addEventListener("submit", async e => {
+    e.preventDefault();
+    const email = document.getElementById("login-email").value.trim();
+    const password = document.getElementById("login-password").value;
+    const { ok, data } = await api("POST", "/api/auth/login", { email, password });
+    if (!ok) { authError(data.error || "Login failed."); return; }
+    closeAuth();
+    await refreshAuth();
+    await refreshLeagues();
+  });
+
+  document.getElementById("signup-form").addEventListener("submit", async e => {
+    e.preventDefault();
+    const displayName = document.getElementById("signup-name").value.trim();
+    const email = document.getElementById("signup-email").value.trim();
+    const password = document.getElementById("signup-password").value;
+    const { ok, data } = await api("POST", "/api/auth/signup", { displayName, email, password });
+    if (!ok) { authError(data.error || "Sign-up failed."); return; }
+    if (data.needVerify) {
+      authMessage(data.message || "Check your email to confirm your account, then log in.");
+      switchAuthTab("login");
+      return;
+    }
+    closeAuth();
+    await refreshAuth();
+    await refreshLeagues();
+  });
+}
+
+async function logout() {
+  await api("POST", "/api/auth/logout");
+  currentUser = null;
+  updateAuthUI();
+}
+
+// ================================================================ prediction sync
+async function loadServerPrediction() {
+  const { ok, data } = await api("GET", "/api/prediction");
+  if (ok && data.state && data.state.groupScores) {
+    state = { groupScores: data.state.groupScores || {}, koPicks: data.state.koPicks || {} };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    renderGroups();
+    await simulate();
+  }
+}
+function scheduleServerSave() {
+  if (!currentUser) return;
+  clearTimeout(serverSaveTimer);
+  serverSaveTimer = setTimeout(() => api("POST", "/api/prediction", { state }), 1200);
+}
+async function savePrediction() {
+  if (!currentUser) { openAuth("login"); return; }
+  const { ok } = await api("POST", "/api/prediction", { state });
+  const btn = document.getElementById("save-btn");
+  const orig = btn.textContent;
+  btn.textContent = ok ? "Saved ✓" : "Error";
+  setTimeout(() => (btn.textContent = orig), 1400);
+}
+
+// ================================================================ leagues
+function wireLeagues() {
+  document.getElementById("create-league-btn").addEventListener("click", createLeague);
+  document.getElementById("join-league-btn").addEventListener("click", joinLeague);
+  document.getElementById("league-back").addEventListener("click", showLeaguesHome);
+  document.getElementById("copy-code-btn").addEventListener("click", () => {
+    const code = document.getElementById("league-detail-code").textContent;
+    navigator.clipboard?.writeText(code);
+    const b = document.getElementById("copy-code-btn");
+    b.textContent = "Copied!"; setTimeout(() => (b.textContent = "Copy"), 1200);
+  });
+  document.getElementById("join-code").addEventListener("keydown",
+    e => { if (e.key === "Enter") joinLeague(); });
+  document.getElementById("league-name").addEventListener("keydown",
+    e => { if (e.key === "Enter") createLeague(); });
+}
+
+async function refreshLeagues() {
+  if (!currentUser) return;
+  const { data } = await api("GET", "/api/leagues");
+  const list = document.getElementById("leagues-list");
+  const empty = document.getElementById("leagues-empty");
+  list.innerHTML = "";
+  if (!Array.isArray(data) || !data.length) { empty.classList.remove("hidden"); return; }
+  empty.classList.add("hidden");
+  data.forEach(lg => {
+    const card = document.createElement("div");
+    card.className = "pred-card";
+    card.innerHTML = `
+      <div class="pname">${escapeHTML(lg.name)}</div>
+      <div class="line">Code: <b class="code-inline">${lg.code}</b></div>
+      <div class="line">${lg.members} member${lg.members === 1 ? "" : "s"}${lg.isOwner ? " · you own this" : ""}</div>`;
+    card.addEventListener("click", () => openLeague(lg.code));
+    list.appendChild(card);
+  });
+}
+
+async function createLeague() {
+  const input = document.getElementById("league-name");
+  const name = input.value.trim();
+  if (!name) { input.focus(); return; }
+  const { ok, data } = await api("POST", "/api/leagues", { name });
+  if (!ok) { alert(data.error || "Could not create league."); return; }
+  input.value = "";
+  await refreshLeagues();
+  openLeague(data.code);
+}
+
+async function joinLeague() {
+  const input = document.getElementById("join-code");
+  const code = input.value.trim().toUpperCase();
+  if (!code) { input.focus(); return; }
+  const { ok, data } = await api("POST", "/api/leagues/join", { code });
+  if (!ok) { alert(data.error || "Could not join league."); return; }
+  input.value = "";
+  await refreshLeagues();
+  openLeague(data.code);
+}
+
+function showLeaguesHome() {
+  document.getElementById("league-detail").classList.add("hidden");
+  document.getElementById("leagues-home").classList.remove("hidden");
+  refreshLeagues();
+}
+
+async function openLeague(code) {
+  const { ok, data } = await api("GET", "/api/leagues/" + encodeURIComponent(code));
+  if (!ok) { alert(data.error || "Could not open league."); return; }
+  document.getElementById("leagues-home").classList.add("hidden");
+  document.getElementById("league-detail").classList.remove("hidden");
+  document.getElementById("league-detail-name").textContent = data.name;
+  document.getElementById("league-detail-code").textContent = data.code;
+
+  const actions = document.getElementById("league-detail-actions");
+  actions.innerHTML = data.isOwner
+    ? `<button class="btn ghost small danger" id="del-league">Delete league</button>`
+    : `<button class="btn ghost small" id="leave-league">Leave league</button>`;
+  const del = document.getElementById("del-league");
+  if (del) del.addEventListener("click", () => deleteLeague(data.code));
+  const leave = document.getElementById("leave-league");
+  if (leave) leave.addEventListener("click", () => leaveLeague(data.code));
+
+  // Members board, sorted: most progress first, then name.
+  const members = [...data.members].sort((a, b) =>
+    ((b.summary?.predicted || 0) - (a.summary?.predicted || 0)) ||
+    a.displayName.localeCompare(b.displayName));
+  let html = `<tr><th>Player</th><th>Champion</th><th>Runner-up</th><th>Predicted</th></tr>`;
+  members.forEach(m => {
+    const s = m.summary || {};
+    const me = currentUser && m.userId === currentUser.id ? ' class="me"' : "";
+    html += `<tr${me}>
+      <td>${escapeHTML(m.displayName)}${me ? " (you)" : ""}</td>
+      <td>${s.champion ? teamHTML(s.champion) : "—"}</td>
+      <td>${s.runnerUp ? teamHTML(s.runnerUp) : "—"}</td>
+      <td>${s.predicted || 0}/${s.total || 72}</td>
+    </tr>`;
+  });
+  document.getElementById("league-board").innerHTML = html;
+}
+
+async function leaveLeague(code) {
+  if (!confirm("Leave this league?")) return;
+  const { ok, data } = await api("POST", `/api/leagues/${encodeURIComponent(code)}/leave`);
+  if (!ok) { alert(data.error || "Could not leave."); return; }
+  showLeaguesHome();
+}
+async function deleteLeague(code) {
+  if (!confirm("Delete this league for everyone? This cannot be undone.")) return;
+  const { ok, data } = await api("DELETE", "/api/leagues/" + encodeURIComponent(code));
+  if (!ok) { alert(data.error || "Could not delete."); return; }
+  showLeaguesHome();
+}
+
+// ================================================================ group stage
 function renderGroups() {
   const grid = document.getElementById("groups-grid");
   grid.innerHTML = "";
@@ -165,17 +428,7 @@ function onScoreInput(e) {
   saveState();
   scheduleSim();
   markFixture(inp.closest(".fixture"));
-
-  // Auto-advance to the next box after a digit is entered (speeds up entry).
   if (v !== null && inp.value !== "") focusSibling(inp, +1);
-}
-
-// Flag a fixture that has exactly one of its two score boxes filled.
-function markFixture(row) {
-  if (!row) return;
-  const filled = [...row.querySelectorAll("input")]
-    .filter(i => i.value.trim() !== "").length;
-  row.classList.toggle("half", filled === 1);
 }
 
 function onScoreKeydown(e) {
@@ -184,62 +437,30 @@ function onScoreKeydown(e) {
     focusSibling(e.target, -1); e.preventDefault();
   }
 }
-
 function focusSibling(current, dir) {
   const inputs = [...document.querySelectorAll("#groups-grid input")];
-  const i = inputs.indexOf(current);
-  const next = inputs[i + dir];
+  const next = inputs[inputs.indexOf(current) + dir];
   if (next) { next.focus(); next.select(); }
 }
-
+function markFixture(row) {
+  if (!row) return;
+  const filled = [...row.querySelectorAll("input")].filter(i => i.value.trim() !== "").length;
+  row.classList.toggle("half", filled === 1);
+}
 function scheduleSim() {
   clearTimeout(simTimer);
   simTimer = setTimeout(simulate, 180);
 }
 
-// ---------------------------------------------------------------- simulate + render
+// ================================================================ simulate + render
 async function simulate() {
-  const res = await (await fetch("/api/simulate", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(state),
-  })).json();
+  const res = (await api("POST", "/api/simulate", state)).data;
   renderStandings(res);
   renderThirdPlace(res);
   renderBracket(res);
   renderChampion(res);
   renderProgress();
   renderSchedule();
-}
-
-function renderSchedule() {
-  const wrap = document.getElementById("schedule-list");
-  if (!wrap || !DATA) return;
-  const fx = [...DATA.fixtures]
-    .filter(f => f.date)
-    .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
-  let html = "";
-  let curDate = null;
-  fx.forEach(f => {
-    if (f.date !== curDate) {
-      curDate = f.date;
-      html += `<div class="sched-day">${fmtFullDate(f.date)}</div>`;
-    }
-    const sc = state.groupScores[f.id] || {};
-    const has = sc.home != null && sc.away != null;
-    const mid = has
-      ? `<span class="sc">${sc.home} – ${sc.away}</span>`
-      : `<span class="vs">v</span>`;
-    html += `<div class="sched-row">
-      <span class="t">${f.time}</span>
-      <span class="grp" title="Group ${f.group}">${f.group}</span>
-      <span class="h">${teamHTML(f.home)}</span>
-      ${mid}
-      <span class="a">${teamHTML(f.away)}</span>
-      <span class="chan ${chanClass(f.channel)}">${f.channel || ""}</span>
-    </div>`;
-  });
-  wrap.innerHTML = html;
 }
 
 function renderProgress() {
@@ -249,29 +470,22 @@ function renderProgress() {
     return s.home == null || s.away == null;
   });
   const done = total - remaining.length;
-
   document.getElementById("progress-fill").style.width = (100 * done / total) + "%";
   document.getElementById("progress-text").textContent =
     done === total ? `All ${total} group matches predicted ✓`
                    : `${done} / ${total} group matches predicted`;
 
-  // When close to done, list the remaining matches as clickable chips.
   const miss = document.getElementById("progress-missing");
   if (remaining.length && remaining.length <= 8) {
-    miss.innerHTML =
-      `<span class="ml">${remaining.length} left:</span>` +
-      remaining.map(f =>
-        `<button class="miss-chip" data-fid="${f.id}">${f.home} v ${f.away}</button>`
-      ).join("");
+    miss.innerHTML = `<span class="ml">${remaining.length} left:</span>` +
+      remaining.map(f => `<button class="miss-chip" data-fid="${f.id}">${f.home} v ${f.away}</button>`).join("");
     miss.classList.remove("hidden");
     miss.querySelectorAll(".miss-chip").forEach(b =>
       b.addEventListener("click", () => jumpToFixture(b.dataset.fid)));
   } else {
-    miss.innerHTML = "";
-    miss.classList.add("hidden");
+    miss.innerHTML = ""; miss.classList.add("hidden");
   }
 }
-
 function jumpToFixture(fid) {
   document.querySelector('.tab[data-tab="groups"]').click();
   const inp = document.querySelector(`#groups-grid input[data-mid="${fid}"]`);
@@ -302,10 +516,7 @@ function renderStandings(res) {
 function renderThirdPlace(res) {
   const wrap = document.getElementById("third-place");
   const table = document.getElementById("third-table");
-  if (!res.groupsComplete || !res.thirdPlaceRanked.length) {
-    wrap.classList.add("hidden");
-    return;
-  }
+  if (!res.groupsComplete || !res.thirdPlaceRanked.length) { wrap.classList.add("hidden"); return; }
   wrap.classList.remove("hidden");
   let html = `<tr><th>Rank</th><th>Group</th><th>Team</th><th>Pts</th><th>GD</th><th>GF</th><th>Status</th></tr>`;
   res.thirdPlaceRanked.forEach((t, i) => {
@@ -315,6 +526,29 @@ function renderThirdPlace(res) {
       <td>${t.qualified ? "✅ Qualified" : "Eliminated"}</td></tr>`;
   });
   table.innerHTML = html;
+}
+
+function renderSchedule() {
+  const wrap = document.getElementById("schedule-list");
+  if (!wrap || !DATA) return;
+  const fx = [...DATA.fixtures].filter(f => f.date)
+    .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  let html = "", curDate = null;
+  fx.forEach(f => {
+    if (f.date !== curDate) { curDate = f.date; html += `<div class="sched-day">${fmtFullDate(f.date)}</div>`; }
+    const sc = state.groupScores[f.id] || {};
+    const has = sc.home != null && sc.away != null;
+    const mid = has ? `<span class="sc">${sc.home} – ${sc.away}</span>` : `<span class="vs">v</span>`;
+    html += `<div class="sched-row">
+      <span class="t">${f.time}</span>
+      <span class="grp" title="Group ${f.group}">${f.group}</span>
+      <span class="h">${teamHTML(f.home)}</span>
+      ${mid}
+      <span class="a">${teamHTML(f.away)}</span>
+      <span class="chan ${chanClass(f.channel)}">${f.channel || ""}</span>
+    </div>`;
+  });
+  wrap.innerHTML = html;
 }
 
 function renderBracketSkeleton() {
@@ -336,14 +570,10 @@ function renderBracket(res) {
   } else {
     notice.classList.add("hidden");
   }
-
   DATA.bracket.forEach(round => {
     const container = document.getElementById("round-" + round.name.replace(/\W/g, ""));
     container.innerHTML = "";
-    round.matches.forEach(m => {
-      const b = res.bracket[m.id] || {};
-      container.appendChild(koMatchEl(m.id, b));
-    });
+    round.matches.forEach(m => container.appendChild(koMatchEl(m.id, res.bracket[m.id] || {})));
   });
 }
 
@@ -354,12 +584,10 @@ function koMatchEl(mid, b) {
   el.appendChild(koTeamEl(mid, b.teamA, lbl.labelA, b.winner, b.teamA && b.teamB));
   el.appendChild(koTeamEl(mid, b.teamB, lbl.labelB, b.winner, b.teamA && b.teamB));
   const tag = document.createElement("div");
-  tag.className = "mid";
-  tag.textContent = "Match " + mid;
+  tag.className = "mid"; tag.textContent = "Match " + mid;
   el.appendChild(tag);
   return el;
 }
-
 function koTeamEl(mid, team, placeholder, winner, clickable) {
   const div = document.createElement("div");
   div.className = "ko-team";
@@ -376,17 +604,12 @@ function koTeamEl(mid, team, placeholder, winner, clickable) {
   }
   return div;
 }
-
 function pickWinner(mid, team) {
-  if (state.koPicks[String(mid)] === team) {
-    delete state.koPicks[String(mid)];   // click again to unpick
-  } else {
-    state.koPicks[String(mid)] = team;
-  }
+  if (state.koPicks[String(mid)] === team) delete state.koPicks[String(mid)];
+  else state.koPicks[String(mid)] = team;
   saveState();
   simulate();
 }
-
 function renderChampion(res) {
   const banner = document.getElementById("champion-banner");
   if (res.champion) {
@@ -395,137 +618,6 @@ function renderChampion(res) {
   } else {
     banner.classList.add("hidden");
   }
-}
-
-// ---------------------------------------------------------------- predictions
-let loadedName = null;   // whose prediction is currently loaded (if any)
-
-async function savePrediction() {
-  const input = document.getElementById("player-name");
-  const pinInput = document.getElementById("player-pin");
-  const name = input.value.trim();
-  const pin = pinInput.value.trim();
-  if (!name) { input.focus(); alert("Enter your name first, then save."); return; }
-  if (pin.length < 3) {
-    pinInput.focus();
-    alert("Set a PIN (3–20 characters). You'll need it to update or delete this prediction later.");
-    return;
-  }
-  localStorage.setItem(NAME_KEY, name);
-  localStorage.setItem(PIN_KEY, pin);
-  const res = await fetch("/api/predictions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, pin, state }),
-  });
-  const data = await res.json();
-  if (!res.ok) { alert(data.error || "Could not save."); return; }
-
-  loadedName = name;
-  const btn = document.getElementById("save-btn");
-  const orig = btn.textContent;
-  btn.textContent = "Saved ✓";
-  setTimeout(() => (btn.textContent = orig), 1400);
-  loadPredictionsList();
-}
-
-async function loadPredictionsList() {
-  const grid = document.getElementById("predictions-grid");
-  const empty = document.getElementById("predictions-empty");
-  const list = await (await fetch("/api/predictions")).json();
-
-  if (!list.length) {
-    grid.innerHTML = "";
-    empty.classList.remove("hidden");
-    return;
-  }
-  empty.classList.add("hidden");
-  grid.innerHTML = "";
-  list.forEach(p => grid.appendChild(predCard(p)));
-}
-
-function predCard(p) {
-  const card = document.createElement("div");
-  card.className = "pred-card" + (p.name === loadedName ? " loaded" : "");
-
-  const champ = p.champion
-    ? `<div class="champ"><span class="lbl">Champion</span>${teamHTML(p.champion)}</div>`
-    : `<div class="champ"><span class="lbl">Champion</span><span class="placeholder">not decided yet</span></div>`;
-
-  const runner = p.runnerUp
-    ? `<div class="line">Runner-up: <b>${teamHTML(p.runnerUp)}</b></div>` : "";
-  const finalists = (p.finalists && p.finalists.length === 2 && !p.champion)
-    ? `<div class="line">Final: <b>${p.finalists.map(teamHTML).join("</b> vs <b>")}</b></div>` : "";
-
-  const pct = p.total ? Math.round(100 * p.predicted / p.total) : 0;
-
-  card.innerHTML = `
-    <button class="del" title="Delete">✕</button>
-    <div class="pname">${escapeHTML(p.name)}</div>
-    ${champ}${runner}${finalists}
-    <div class="pbar"><div style="width:${pct}%"></div></div>
-    <div class="meta">
-      <span>${p.predicted}/${p.total} group games</span>
-      <span>${updatedAgo(p.updated)}</span>
-    </div>`;
-
-  card.addEventListener("click", e => {
-    if (e.target.classList.contains("del")) return;
-    loadPrediction(p.name);
-  });
-  card.querySelector(".del").addEventListener("click", e => {
-    e.stopPropagation();
-    deletePrediction(p.name);
-  });
-  return card;
-}
-
-async function loadPrediction(name) {
-  const res = await fetch("/api/predictions/" + encodeURIComponent(name));
-  if (!res.ok) { alert("Could not load that prediction."); return; }
-  const rec = await res.json();
-  state = {
-    groupScores: rec.state.groupScores || {},
-    koPicks: rec.state.koPicks || {},
-  };
-  loadedName = rec.name;
-  saveState();
-  document.getElementById("player-name").value = rec.name;
-  localStorage.setItem(NAME_KEY, rec.name);
-  renderGroups();            // rebuild inputs from loaded scores
-  await simulate();
-  // jump to the group stage so the loaded picks are visible
-  document.querySelector('.tab[data-tab="groups"]').click();
-}
-
-async function deletePrediction(name) {
-  const pin = prompt(`Enter the PIN for "${name}" to delete this prediction:`);
-  if (pin === null) return;   // cancelled
-  const res = await fetch(
-    "/api/predictions/" + encodeURIComponent(name) + "?pin=" + encodeURIComponent(pin),
-    { method: "DELETE" }
-  );
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    alert(data.error || "Could not delete.");
-    return;
-  }
-  if (loadedName === name) loadedName = null;
-  loadPredictionsList();
-}
-
-function escapeHTML(s) {
-  return s.replace(/[&<>"']/g, c => (
-    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-}
-
-function updatedAgo(ts) {
-  if (!ts) return "";
-  const secs = Math.floor(Date.now() / 1000) - ts;
-  if (secs < 60) return "just now";
-  if (secs < 3600) return Math.floor(secs / 60) + "m ago";
-  if (secs < 86400) return Math.floor(secs / 3600) + "h ago";
-  return Math.floor(secs / 86400) + "d ago";
 }
 
 init();

@@ -1,21 +1,42 @@
 """2026 World Cup Predictor — Flask backend.
 
-Serves the single-page UI and exposes:
-  GET  /api/data            -> static tournament data (groups, fixtures, bracket)
-  POST /api/simulate        -> resolves standings + bracket from user picks
-  GET  /api/predictions     -> list everyone's saved predictions (summaries)
-  POST /api/predictions     -> save/update a named prediction
-  GET  /api/predictions/<n> -> load one person's full prediction
-  DELETE /api/predictions/<n> -> remove a prediction
+Accounts (email + password, optional email verification), user-scoped
+predictions, and private leagues with join codes.
+
+Public:
+  GET  /                      -> single-page UI
+  GET  /api/data              -> static tournament data
+  POST /api/simulate          -> resolve standings + bracket from posted picks
+Auth:
+  GET  /api/auth/me           -> current user or null
+  POST /api/auth/signup       -> create account
+  POST /api/auth/login        -> log in
+  POST /api/auth/logout       -> log out
+  GET  /verify?token=...      -> confirm email
+Prediction (login required):
+  GET/POST /api/prediction    -> load / save the logged-in user's bracket
+Leagues (login required):
+  GET  /api/leagues           -> my leagues
+  POST /api/leagues           -> create (returns join code)
+  POST /api/leagues/join      -> join by code
+  GET  /api/leagues/<code>    -> league detail + members' predictions
+  POST /api/leagues/<code>/leave
+  DELETE /api/leagues/<code>  -> delete (owner only)
 """
 
+import os
+import re
+import secrets
 import time
+from functools import wraps
 
-from flask import Flask, jsonify, request, render_template
-
+from flask import (
+    Flask, jsonify, request, render_template, session, redirect, url_for, abort
+)
 from werkzeug.security import check_password_hash, generate_password_hash
 
-import store
+import db
+import emailer
 from data import (
     GROUPS, FLAGS, FLAG_CODES, build_group_fixtures,
     R32, R16, QF, SF, FINAL,
@@ -23,14 +44,71 @@ from data import (
 from engine import simulate
 
 app = Flask(__name__)
+app.config.update(
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_HTTPONLY=True,
+    PERMANENT_SESSION_LIFETIME=60 * 60 * 24 * 30,  # 30 days
+)
 
-store.init_db()
+db.init_db()
 _FIXTURE_IDS = [f["id"] for f in build_group_fixtures()]
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no ambiguous chars (0/O/1/I)
 
 
-# --------------------------------------------------------------- persistence
+# --------------------------------------------------------------- secret key
+def _load_secret_key():
+    env = os.environ.get("WC_SECRET")
+    if env:
+        return env
+    path = os.path.join(app.root_path, "secret_key.txt")
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as fh:
+            return fh.read().strip()
+    key = secrets.token_hex(32)
+    try:
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(key)
+    except OSError:
+        pass
+    return key
+
+
+app.secret_key = _load_secret_key()
+
+
+# --------------------------------------------------------------- helpers
+def current_user():
+    uid = session.get("uid")
+    return db.get_user_by_id(uid) if uid else None
+
+
+def public_user(u):
+    if not u:
+        return None
+    return {"id": u["id"], "email": u["email"],
+            "displayName": u["display_name"], "verified": bool(u["verified"])}
+
+
+def login_required(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        u = current_user()
+        if not u:
+            return jsonify({"error": "Please log in."}), 401
+        return fn(u, *args, **kwargs)
+    return wrapper
+
+
+def _gen_league_code():
+    for _ in range(50):
+        code = "".join(secrets.choice(_CODE_ALPHABET) for _ in range(6))
+        if not db.code_exists(code):
+            return code
+    raise RuntimeError("could not allocate a unique league code")
+
+
 def _summarize(state):
-    """Derive a compact summary (champion, finalists, etc.) from a prediction."""
     res = simulate(state)
     b = res["bracket"]
     final = b.get(104, {})
@@ -45,12 +123,11 @@ def _summarize(state):
         semifinalists += [m.get("teamA"), m.get("teamB")]
 
     gs = state.get("groupScores", {}) or {}
-    done = 0
-    for fid in _FIXTURE_IDS:
-        s = gs.get(fid) or {}
-        if isinstance(s.get("home"), int) and isinstance(s.get("away"), int):
-            done += 1
-
+    done = sum(
+        1 for fid in _FIXTURE_IDS
+        if isinstance((gs.get(fid) or {}).get("home"), int)
+        and isinstance((gs.get(fid) or {}).get("away"), int)
+    )
     return {
         "champion": champion,
         "runnerUp": runner_up,
@@ -62,7 +139,6 @@ def _summarize(state):
     }
 
 
-# --------------------------------------------------------------- bracket meta
 def _bracket_template():
     def label(ref):
         t = ref["type"]
@@ -95,7 +171,7 @@ def _bracket_template():
     return rounds
 
 
-# --------------------------------------------------------------- routes
+# --------------------------------------------------------------- public
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -118,57 +194,183 @@ def api_simulate():
     return jsonify(simulate(state))
 
 
-@app.route("/api/predictions", methods=["GET"])
-def api_list_predictions():
-    return jsonify(store.list_all())
+# --------------------------------------------------------------- auth
+@app.route("/api/auth/me")
+def api_me():
+    return jsonify({"user": public_user(current_user()),
+                    "verificationEnforced": emailer.is_configured()})
 
 
-@app.route("/api/predictions", methods=["POST"])
-def api_save_prediction():
+@app.route("/api/auth/signup", methods=["POST"])
+def api_signup():
     body = request.get_json(force=True, silent=True) or {}
-    name = (body.get("name") or "").strip()
-    pin = (body.get("pin") or "").strip()
+    email = (body.get("email") or "").strip().lower()
+    name = (body.get("displayName") or "").strip()
+    password = body.get("password") or ""
+
+    if not _EMAIL_RE.match(email):
+        return jsonify({"error": "Enter a valid email address."}), 400
+    if not (1 <= len(name) <= 40):
+        return jsonify({"error": "Display name must be 1–40 characters."}), 400
+    if len(password) < 6:
+        return jsonify({"error": "Password must be at least 6 characters."}), 400
+    if db.get_user_by_email(email):
+        return jsonify({"error": "An account with that email already exists."}), 409
+
+    enforce = emailer.is_configured()
+    token = secrets.token_urlsafe(24)
+    uid = db.create_user(
+        email, name, generate_password_hash(password),
+        verified=not enforce, verify_token=(token if enforce else None),
+        created=int(time.time()),
+    )
+    if uid is None:
+        return jsonify({"error": "An account with that email already exists."}), 409
+
+    if enforce:
+        verify_url = url_for("verify_email", token=token, _external=True)
+        emailer.send_verification(email, name, verify_url)
+        return jsonify({"needVerify": True,
+                        "message": "Check your email for a confirmation link."})
+
+    # Dev mode (no SMTP configured): auto-verified, log in immediately.
+    session.permanent = True
+    session["uid"] = uid
+    return jsonify({"user": public_user(db.get_user_by_id(uid)), "devAutoVerified": True})
+
+
+@app.route("/api/auth/login", methods=["POST"])
+def api_login():
+    body = request.get_json(force=True, silent=True) or {}
+    email = (body.get("email") or "").strip().lower()
+    password = body.get("password") or ""
+    u = db.get_user_by_email(email)
+    if not u or not check_password_hash(u["password_hash"], password):
+        return jsonify({"error": "Incorrect email or password."}), 401
+    if emailer.is_configured() and not u["verified"]:
+        return jsonify({"error": "Please confirm your email first — check your inbox.",
+                        "needVerify": True}), 403
+    session.permanent = True
+    session["uid"] = u["id"]
+    return jsonify({"user": public_user(u)})
+
+
+@app.route("/api/auth/logout", methods=["POST"])
+def api_logout():
+    session.clear()
+    return jsonify({"ok": True})
+
+
+@app.route("/verify")
+def verify_email():
+    token = request.args.get("token", "")
+    uid = db.verify_token(token)
+    if uid:
+        session.permanent = True
+        session["uid"] = uid
+        return redirect("/?verified=1")
+    return redirect("/?verified=0")
+
+
+# --------------------------------------------------------------- prediction
+@app.route("/api/prediction", methods=["GET"])
+@login_required
+def api_get_prediction(user):
+    rec = db.get_prediction(user["id"])
+    return jsonify(rec or {"state": None})
+
+
+@app.route("/api/prediction", methods=["POST"])
+@login_required
+def api_save_prediction(user):
+    body = request.get_json(force=True, silent=True) or {}
     state = body.get("state") or {}
-    if not name:
-        return jsonify({"error": "A name is required."}), 400
-    if len(name) > 40:
-        return jsonify({"error": "Name too long (max 40 characters)."}), 400
-    if not (3 <= len(pin) <= 20):
-        return jsonify({"error": "Set a PIN of 3–20 characters."}), 400
-
-    existing_hash = store.get_pin_hash(name)  # None=new, ''=unprotected, else hash
-    if existing_hash:
-        if not check_password_hash(existing_hash, pin):
-            return jsonify({"error": "Wrong PIN — that name is taken by someone else."}), 403
-
-    clean_state = {
+    clean = {
         "groupScores": state.get("groupScores", {}) or {},
         "koPicks": state.get("koPicks", {}) or {},
     }
-    summary = _summarize(state)
-    store.upsert(name, clean_state, summary, int(time.time()),
-                 generate_password_hash(pin))
-    return jsonify({"ok": True, "name": name, "summary": summary})
+    summary = _summarize(clean)
+    db.save_prediction(user["id"], clean, summary, int(time.time()))
+    return jsonify({"ok": True, "summary": summary})
 
 
-@app.route("/api/predictions/<name>", methods=["GET"])
-def api_get_prediction(name):
-    rec = store.get(name.strip())
-    if not rec:
-        return jsonify({"error": "Not found."}), 404
-    return jsonify(rec)
+# --------------------------------------------------------------- leagues
+def _league_public(lg, user_id):
+    return {"code": lg["code"], "name": lg["name"],
+            "members": lg.get("members"),
+            "isOwner": lg["owner_id"] == user_id}
 
 
-@app.route("/api/predictions/<name>", methods=["DELETE"])
-def api_delete_prediction(name):
-    name = name.strip()
-    existing_hash = store.get_pin_hash(name)
-    if existing_hash is None:
-        return jsonify({"error": "Not found."}), 404
-    pin = (request.args.get("pin") or "").strip()
-    if existing_hash and not check_password_hash(existing_hash, pin):
-        return jsonify({"error": "Wrong PIN — cannot delete."}), 403
-    store.delete(name)
+@app.route("/api/leagues", methods=["GET"])
+@login_required
+def api_list_leagues(user):
+    out = []
+    for lg in db.list_user_leagues(user["id"]):
+        out.append({"code": lg["code"], "name": lg["name"],
+                    "members": lg["members"], "isOwner": lg["owner_id"] == user["id"]})
+    return jsonify(out)
+
+
+@app.route("/api/leagues", methods=["POST"])
+@login_required
+def api_create_league(user):
+    body = request.get_json(force=True, silent=True) or {}
+    name = (body.get("name") or "").strip()
+    if not (1 <= len(name) <= 50):
+        return jsonify({"error": "League name must be 1–50 characters."}), 400
+    code = _gen_league_code()
+    db.create_league(code, name, user["id"], int(time.time()))
+    return jsonify({"ok": True, "code": code, "name": name})
+
+
+@app.route("/api/leagues/join", methods=["POST"])
+@login_required
+def api_join_league(user):
+    body = request.get_json(force=True, silent=True) or {}
+    code = (body.get("code") or "").strip().upper()
+    lg = db.get_league_by_code(code)
+    if not lg:
+        return jsonify({"error": "No league found with that code."}), 404
+    db.add_member(lg["id"], user["id"], int(time.time()))
+    return jsonify({"ok": True, "code": lg["code"], "name": lg["name"]})
+
+
+@app.route("/api/leagues/<code>", methods=["GET"])
+@login_required
+def api_league_detail(user, code):
+    lg = db.get_league_by_code(code)
+    if not lg:
+        return jsonify({"error": "No league found with that code."}), 404
+    if not db.is_member(lg["id"], user["id"]):
+        return jsonify({"error": "You're not a member of this league."}), 403
+    return jsonify({
+        "code": lg["code"], "name": lg["name"],
+        "isOwner": lg["owner_id"] == user["id"],
+        "members": db.league_members(lg["id"]),
+    })
+
+
+@app.route("/api/leagues/<code>/leave", methods=["POST"])
+@login_required
+def api_leave_league(user, code):
+    lg = db.get_league_by_code(code)
+    if not lg:
+        return jsonify({"error": "No league found with that code."}), 404
+    if lg["owner_id"] == user["id"]:
+        return jsonify({"error": "The owner can't leave; delete the league instead."}), 400
+    db.remove_member(lg["id"], user["id"])
+    return jsonify({"ok": True})
+
+
+@app.route("/api/leagues/<code>", methods=["DELETE"])
+@login_required
+def api_delete_league(user, code):
+    lg = db.get_league_by_code(code)
+    if not lg:
+        return jsonify({"error": "No league found with that code."}), 404
+    if lg["owner_id"] != user["id"]:
+        return jsonify({"error": "Only the owner can delete this league."}), 403
+    db.delete_league(lg["id"])
     return jsonify({"ok": True})
 
 

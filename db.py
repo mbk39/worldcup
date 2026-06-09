@@ -1,0 +1,224 @@
+"""SQLite data layer: users, user-scoped predictions, and leagues.
+
+Replaces the old name+PIN store. Predictions now belong to a logged-in user.
+Pure stdlib. DB path overridable with WC_DB.
+"""
+
+import json
+import os
+import sqlite3
+import threading
+
+DB_PATH = os.environ.get(
+    "WC_DB", os.path.join(os.path.dirname(os.path.abspath(__file__)), "worldcup.db")
+)
+_lock = threading.Lock()
+
+
+def _conn():
+    conn = sqlite3.connect(DB_PATH, timeout=10)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
+
+def init_db():
+    with _conn() as conn:
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                email         TEXT UNIQUE NOT NULL,       -- lowercased
+                display_name  TEXT NOT NULL,
+                password_hash TEXT NOT NULL,
+                verified      INTEGER NOT NULL DEFAULT 0,
+                verify_token  TEXT,
+                created       INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS predictions (
+                user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                state   TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                updated INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS leagues (
+                id       INTEGER PRIMARY KEY AUTOINCREMENT,
+                code     TEXT UNIQUE NOT NULL,
+                name     TEXT NOT NULL,
+                owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                created  INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS league_members (
+                league_id INTEGER NOT NULL REFERENCES leagues(id) ON DELETE CASCADE,
+                user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                joined    INTEGER NOT NULL,
+                PRIMARY KEY (league_id, user_id)
+            );
+            """
+        )
+
+
+# --------------------------------------------------------------- users
+def create_user(email, display_name, password_hash, verified, verify_token, created):
+    """Insert a user. Returns id, or None if the email already exists."""
+    with _lock, _conn() as conn:
+        try:
+            cur = conn.execute(
+                "INSERT INTO users(email,display_name,password_hash,verified,verify_token,created)"
+                " VALUES(?,?,?,?,?,?)",
+                (email.lower(), display_name, password_hash,
+                 1 if verified else 0, verify_token, created),
+            )
+            return cur.lastrowid
+        except sqlite3.IntegrityError:
+            return None
+
+
+def get_user_by_email(email):
+    with _conn() as conn:
+        r = conn.execute("SELECT * FROM users WHERE email=?", (email.lower(),)).fetchone()
+    return dict(r) if r else None
+
+
+def get_user_by_id(uid):
+    with _conn() as conn:
+        r = conn.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+    return dict(r) if r else None
+
+
+def verify_token(token):
+    """Mark verified for a matching token. Returns the user id, or None."""
+    if not token:
+        return None
+    with _lock, _conn() as conn:
+        r = conn.execute("SELECT id FROM users WHERE verify_token=?", (token,)).fetchone()
+        if not r:
+            return None
+        conn.execute(
+            "UPDATE users SET verified=1, verify_token=NULL WHERE id=?", (r["id"],)
+        )
+        return r["id"]
+
+
+# --------------------------------------------------------------- predictions
+def save_prediction(user_id, state, summary, updated):
+    with _lock, _conn() as conn:
+        conn.execute(
+            """INSERT INTO predictions(user_id,state,summary,updated)
+               VALUES(?,?,?,?)
+               ON CONFLICT(user_id) DO UPDATE SET
+                   state=excluded.state, summary=excluded.summary,
+                   updated=excluded.updated""",
+            (user_id, json.dumps(state), json.dumps(summary), updated),
+        )
+
+
+def get_prediction(user_id):
+    with _conn() as conn:
+        r = conn.execute(
+            "SELECT state,summary,updated FROM predictions WHERE user_id=?", (user_id,)
+        ).fetchone()
+    if not r:
+        return None
+    return {"state": json.loads(r["state"]), "summary": json.loads(r["summary"]),
+            "updated": r["updated"]}
+
+
+# --------------------------------------------------------------- leagues
+def code_exists(code):
+    with _conn() as conn:
+        return conn.execute(
+            "SELECT 1 FROM leagues WHERE code=?", (code,)
+        ).fetchone() is not None
+
+
+def create_league(code, name, owner_id, created):
+    with _lock, _conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO leagues(code,name,owner_id,created) VALUES(?,?,?,?)",
+            (code, name, owner_id, created),
+        )
+        lid = cur.lastrowid
+        conn.execute(
+            "INSERT OR IGNORE INTO league_members(league_id,user_id,joined) VALUES(?,?,?)",
+            (lid, owner_id, created),
+        )
+        return lid
+
+
+def get_league_by_code(code):
+    with _conn() as conn:
+        r = conn.execute("SELECT * FROM leagues WHERE code=?", (code.upper(),)).fetchone()
+    return dict(r) if r else None
+
+
+def add_member(league_id, user_id, joined):
+    with _lock, _conn() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO league_members(league_id,user_id,joined) VALUES(?,?,?)",
+            (league_id, user_id, joined),
+        )
+
+
+def is_member(league_id, user_id):
+    with _conn() as conn:
+        return conn.execute(
+            "SELECT 1 FROM league_members WHERE league_id=? AND user_id=?",
+            (league_id, user_id),
+        ).fetchone() is not None
+
+
+def remove_member(league_id, user_id):
+    with _lock, _conn() as conn:
+        conn.execute(
+            "DELETE FROM league_members WHERE league_id=? AND user_id=?",
+            (league_id, user_id),
+        )
+
+
+def delete_league(league_id):
+    with _lock, _conn() as conn:
+        conn.execute("DELETE FROM leagues WHERE id=?", (league_id,))
+
+
+def list_user_leagues(user_id):
+    """Leagues the user belongs to, with member counts."""
+    with _conn() as conn:
+        rows = conn.execute(
+            """SELECT l.id, l.code, l.name, l.owner_id, l.created,
+                      (SELECT COUNT(*) FROM league_members m2 WHERE m2.league_id=l.id) AS members
+               FROM leagues l
+               JOIN league_members m ON m.league_id = l.id
+               WHERE m.user_id = ?
+               ORDER BY l.created DESC""",
+            (user_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def league_members(league_id):
+    """Members of a league with their prediction summary (no email leaked)."""
+    with _conn() as conn:
+        rows = conn.execute(
+            """SELECT u.id, u.display_name, m.joined,
+                      p.summary AS summary, p.updated AS pred_updated
+               FROM league_members m
+               JOIN users u ON u.id = m.user_id
+               LEFT JOIN predictions p ON p.user_id = u.id
+               WHERE m.league_id = ?
+               ORDER BY u.display_name COLLATE NOCASE""",
+            (league_id,),
+        ).fetchall()
+    out = []
+    for r in rows:
+        out.append({
+            "userId": r["id"],
+            "displayName": r["display_name"],
+            "joined": r["joined"],
+            "summary": json.loads(r["summary"]) if r["summary"] else None,
+            "predUpdated": r["pred_updated"],
+        })
+    return out

@@ -5,8 +5,10 @@ __pycache__/
 *.pyc
 .venv/
 venv/
-# Local data — do NOT commit people's saved predictions
+# Local data & secrets — never commit
 predictions.db
 predictions.json
 predictions.json.imported
+worldcup.db
+secret_key.txt
 *.tmp

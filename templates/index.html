@@ -14,10 +14,15 @@
     </div>
     <div class="header-actions">
       <div id="champion-banner" class="champion hidden"></div>
-      <input id="player-name" class="name-input" type="text" maxlength="40" placeholder="Your name">
-      <input id="player-pin" class="name-input pin-input" type="password" maxlength="20" placeholder="PIN" title="Set a PIN (3–20 chars) the first time. You'll need it to update or delete your prediction.">
       <button id="save-btn" class="btn primary">Save prediction</button>
-      <button id="reset-btn" class="btn ghost">Reset all</button>
+      <!-- logged out -->
+      <button id="login-btn" class="btn">Log in / Sign up</button>
+      <!-- logged in -->
+      <div id="user-menu" class="user-menu hidden">
+        <span id="user-name" class="user-name"></span>
+        <button id="logout-btn" class="btn ghost">Log out</button>
+      </div>
+      <button id="reset-btn" class="btn ghost">Reset</button>
     </div>
   </header>
 
@@ -25,7 +30,7 @@
     <button class="tab active" data-tab="groups">Group Stage</button>
     <button class="tab" data-tab="schedule">Schedule</button>
     <button class="tab" data-tab="knockout">Knockout Bracket</button>
-    <button class="tab" data-tab="predictions">Everyone's Predictions</button>
+    <button class="tab" data-tab="leagues">My Leagues</button>
   </nav>
 
   <main>
@@ -53,15 +58,77 @@
       <div id="bracket" class="bracket"></div>
     </section>
 
-    <section id="tab-predictions" class="tab-panel">
-      <div class="predictions-head">
-        <h2>Everyone's Predictions</h2>
-        <p class="hint">Type your name and hit <b>Save prediction</b> to add yours. Click any card to load and view that bracket.</p>
+    <section id="tab-leagues" class="tab-panel">
+      <!-- Logged out -->
+      <div id="leagues-gate" class="notice hidden">
+        <p>Log in or sign up to create and join prediction leagues with friends.</p>
+        <button class="btn primary" onclick="openAuth('login')">Log in / Sign up</button>
       </div>
-      <div id="predictions-grid" class="predictions-grid"></div>
-      <div id="predictions-empty" class="notice hidden">No predictions saved yet — be the first!</div>
+
+      <!-- Logged in -->
+      <div id="leagues-main" class="hidden">
+        <div id="leagues-home">
+          <div class="predictions-head"><h2>My Leagues</h2>
+            <p class="hint">Create a league and share its code, or join one with a friend's code.</p></div>
+          <div class="league-actions">
+            <div class="league-box">
+              <h3>Create a league</h3>
+              <input id="league-name" class="name-input" type="text" maxlength="50" placeholder="League name">
+              <button id="create-league-btn" class="btn primary">Create</button>
+            </div>
+            <div class="league-box">
+              <h3>Join a league</h3>
+              <input id="join-code" class="name-input code" type="text" maxlength="6" placeholder="CODE">
+              <button id="join-league-btn" class="btn">Join</button>
+            </div>
+          </div>
+          <div id="leagues-list" class="predictions-grid"></div>
+          <div id="leagues-empty" class="notice hidden">You're not in any leagues yet — create one above and share the code.</div>
+        </div>
+
+        <div id="league-detail" class="hidden">
+          <button id="league-back" class="btn ghost">← Back to my leagues</button>
+          <div class="league-detail-head">
+            <h2 id="league-detail-name"></h2>
+            <div class="code-share">
+              <span class="code-label">Join code</span>
+              <span id="league-detail-code" class="code-pill"></span>
+              <button id="copy-code-btn" class="btn ghost small">Copy</button>
+            </div>
+          </div>
+          <div id="league-detail-actions" class="league-detail-actions"></div>
+          <table id="league-board"></table>
+        </div>
+      </div>
     </section>
   </main>
+
+  <!-- Auth modal -->
+  <div id="auth-modal" class="modal-overlay hidden">
+    <div class="modal">
+      <button id="auth-close" class="modal-close">✕</button>
+      <div class="auth-tabs">
+        <button class="auth-tab active" data-auth="login">Log in</button>
+        <button class="auth-tab" data-auth="signup">Sign up</button>
+      </div>
+
+      <form id="login-form" class="auth-form">
+        <label>Email<input type="email" id="login-email" autocomplete="email" required></label>
+        <label>Password<input type="password" id="login-password" autocomplete="current-password" required></label>
+        <button type="submit" class="btn primary full">Log in</button>
+      </form>
+
+      <form id="signup-form" class="auth-form hidden">
+        <label>Display name<input type="text" id="signup-name" maxlength="40" required></label>
+        <label>Email<input type="email" id="signup-email" autocomplete="email" required></label>
+        <label>Password<input type="password" id="signup-password" autocomplete="new-password" minlength="6" required></label>
+        <button type="submit" class="btn primary full">Create account</button>
+      </form>
+
+      <div id="auth-error" class="auth-error hidden"></div>
+      <div id="auth-message" class="auth-message hidden"></div>
+    </div>
+  </div>
 
   <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>

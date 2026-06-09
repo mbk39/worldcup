@@ -129,6 +129,46 @@ Then others on your Wi-Fi can reach `http://<your-PC-ip>:5000`.
 
 ---
 
+## Accounts, leagues & email verification
+
+The app now has user accounts (email + password), per-user predictions, and
+private leagues with join codes. A few deployment notes:
+
+- **Database:** data now lives in `worldcup.db` (auto-created on first run,
+  git-ignored). The old `predictions.db` (name+PIN board) is no longer used —
+  those anonymous predictions don't carry over, since predictions now belong to
+  accounts.
+- **Session secret:** a signing key for login sessions is auto-generated into
+  `secret_key.txt` (git-ignored) on first run and reused after that, so logins
+  survive reloads. To set it explicitly, use the `WC_SECRET` env var.
+
+### Turning on real email verification (optional)
+
+Out of the box, with no email configured, sign-up **auto-confirms** accounts so
+everything works immediately (the verification link is just printed to the
+server log). To require real email confirmation, give the app SMTP credentials.
+
+**Easiest: a Gmail App Password** (works on free PythonAnywhere via their Gmail
+exception):
+1. On the Google account you'll send from, enable **2-Step Verification**.
+2. Create an **App Password** (Google Account → Security → App passwords) — a
+   16-character code.
+3. On PythonAnywhere, edit your **WSGI configuration file** and add these lines
+   **above** `from wsgi import application`:
+   ```python
+   import os
+   os.environ["SMTP_HOST"] = "smtp.gmail.com"
+   os.environ["SMTP_PORT"] = "587"
+   os.environ["SMTP_USER"] = "youraddress@gmail.com"
+   os.environ["SMTP_PASS"] = "your16charapppassword"   # the App Password
+   os.environ["FROM_NAME"] = "World Cup Predictor"
+   ```
+4. **Reload** the web app. From now on new sign-ups must click the emailed link
+   before they can log in.
+
+Prefer an HTTPS email API (SendGrid/Brevo/Mailgun, all on the free allow-list)?
+Tell me and I'll swap the sender to use it instead of SMTP.
+
 ## Notes
 - The database file is created automatically on first run. An existing
   `predictions.json` from the old version is auto-imported once, then renamed to

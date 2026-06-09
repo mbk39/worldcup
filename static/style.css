@@ -272,3 +272,74 @@ table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .ko-match .mid { font-size: 10px; color: var(--muted); padding: 2px 11px; background: var(--bg); }
 
 .hidden { display: none !important; }
+
+/* ===================== Accounts, modal & leagues ===================== */
+.user-menu { display: flex; align-items: center; gap: 10px; }
+.user-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.user-name::before { content: "👤 "; }
+
+.btn.small { padding: 5px 10px; font-size: 12px; }
+.btn.full { width: 100%; }
+.btn.danger { color: #f87171; border-color: #f8717155; }
+.btn.danger:hover { background: rgba(248,113,113,.12); }
+
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(4,8,18,.72);
+  display: flex; align-items: center; justify-content: center; z-index: 50;
+  backdrop-filter: blur(3px);
+}
+.modal {
+  background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+  padding: 26px; width: 360px; max-width: 92vw; position: relative;
+  box-shadow: 0 20px 60px rgba(0,0,0,.5);
+}
+.modal-close {
+  position: absolute; top: 12px; right: 12px; background: none; border: none;
+  color: var(--muted); font-size: 16px; cursor: pointer;
+}
+.modal-close:hover { color: var(--text); }
+.auth-tabs { display: flex; gap: 6px; margin-bottom: 18px; }
+.auth-tab {
+  flex: 1; background: var(--bg2); border: 1px solid var(--line); color: var(--muted);
+  padding: 9px; border-radius: 8px; cursor: pointer; font-size: 14px;
+}
+.auth-tab.active { color: var(--text); border-color: var(--accent); background: rgba(52,211,153,.10); }
+.auth-form { display: flex; flex-direction: column; gap: 12px; }
+.auth-form label { display: flex; flex-direction: column; gap: 5px; font-size: 13px; color: var(--muted); }
+.auth-form input {
+  background: var(--bg2); border: 1px solid var(--line); color: var(--text);
+  border-radius: 8px; padding: 10px 12px; font-size: 14px;
+}
+.auth-form input:focus { outline: none; border-color: var(--accent); }
+.auth-error { margin-top: 14px; color: #fca5a5; background: rgba(248,113,113,.10);
+  border: 1px solid #f8717144; border-radius: 8px; padding: 9px 12px; font-size: 13px; }
+.auth-message { margin-top: 14px; color: #86efac; background: rgba(52,211,153,.10);
+  border: 1px solid #34d39944; border-radius: 8px; padding: 9px 12px; font-size: 13px; }
+
+.league-actions { display: flex; flex-wrap: wrap; gap: 16px; margin: 18px 0 24px; }
+.league-box {
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+  padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; min-width: 240px; flex: 1;
+}
+.league-box h3 { margin: 0; font-size: 15px; }
+.league-box .name-input { width: 100%; }
+.name-input.code, .join-code { text-transform: uppercase; letter-spacing: 2px; font-weight: 700; }
+.code-inline { font-family: ui-monospace, monospace; letter-spacing: 1px; color: var(--accent2); }
+
+.league-detail-head { display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 12px; margin: 8px 0 6px; }
+.league-detail-head h2 { margin: 0; }
+.code-share { display: flex; align-items: center; gap: 8px; }
+.code-label { color: var(--muted); font-size: 12px; }
+.code-pill {
+  font-family: ui-monospace, monospace; font-size: 18px; font-weight: 700; letter-spacing: 3px;
+  background: var(--bg2); border: 1px solid var(--accent2); color: var(--accent2);
+  padding: 4px 12px; border-radius: 8px;
+}
+.league-detail-actions { margin: 4px 0 16px; }
+
+#league-board { width: 100%; border-collapse: collapse; }
+#league-board th { text-align: left; color: var(--muted); font-size: 12px; padding: 8px 10px; }
+#league-board td { padding: 9px 10px; border-top: 1px solid var(--line); font-size: 14px; }
+#league-board tr.me td { background: rgba(52,211,153,.10); }
+#league-board tr.me td:first-child { font-weight: 700; }
