@@ -381,9 +381,22 @@ def api_results():
 def api_my_points(user):
     results = db.get_all_results()
     rec = db.get_prediction(user["id"])
-    tournament = scoring.compute_points(rec["state"] if rec else None, results)
-    live = scoring.compute_points({"groupScores": db.get_live(user["id"])}, results)
-    return jsonify({"tournament": tournament, "live": live})
+    tournament = scoring.compute_tournament_points(rec["state"] if rec else None, results)
+    group = scoring.compute_points({"groupScores": db.get_live(user["id"])}, results)
+    knockout = scoring.compute_knockout_live_points(db.get_live_ko(user["id"]), results)
+    return jsonify({"tournament": tournament, "group": group, "knockout": knockout})
+
+
+@app.route("/api/bracket/actual")
+def api_actual_bracket():
+    results = db.get_all_results()
+    bracket = scoring.resolve_actual_bracket(results)
+    group_done = sum(1 for mid, r in results.items()
+                     if mid.startswith("G-") and isinstance(r.get("home"), int))
+    return jsonify({
+        "bracket": {str(k): v for k, v in bracket.items()},
+        "groupComplete": group_done >= len(_FIXTURE_IDS),
+    })
 
 
 @app.route("/api/live", methods=["GET"])
@@ -493,19 +506,23 @@ def api_league_detail(user, code):
     members = db.league_members(lg["id"])
     tour_states = {m["userId"]: m["state"] for m in db.get_league_member_states(lg["id"])}
     live_states = db.get_league_member_live(lg["id"])
+    ko_states = db.get_league_member_live_ko(lg["id"])
     for m in members:
         uid = m["userId"]
-        t = scoring.compute_points(tour_states.get(uid), results)["total"]
-        liv = scoring.compute_points({"groupScores": live_states.get(uid, {})}, results)["total"]
-        m["points"] = {"tournament": t, "live": liv, "total": t + liv}
-    members.sort(key=lambda m: (-m["points"]["total"], -m["points"]["tournament"],
-                                m["displayName"].lower()))
+        t = scoring.compute_tournament_points(tour_states.get(uid), results)["total"]
+        g = scoring.compute_points({"groupScores": live_states.get(uid, {})}, results)["total"]
+        k = scoring.compute_knockout_live_points(ko_states.get(uid, {}), results)["total"]
+        m["points"] = {"tournament": t, "group": g, "knockout": k}
+    members.sort(key=lambda m: (-(m["points"]["tournament"] + m["points"]["group"]
+                                  + m["points"]["knockout"]), m["displayName"].lower()))
+    group_done = sum(1 for mid, r in results.items()
+                     if mid.startswith("G-") and isinstance(r.get("home"), int))
     return jsonify({
         "code": lg["code"], "name": lg["name"],
         "isOwner": lg["owner_id"] == user["id"],
         "members": members,
-        "resultsScored": sum(1 for mid, r in results.items()
-                             if mid.startswith("G-") and isinstance(r.get("home"), int)),
+        "resultsScored": group_done,
+        "knockoutReady": group_done >= len(_FIXTURE_IDS),
     })
 
 
@@ -615,7 +632,8 @@ def api_admin_put_result(user, match_id):
     home, away = _score(body.get("home")), _score(body.get("away"))
     status = body.get("status") if body.get("status") in ("scheduled", "live", "ft") else "scheduled"
     scorers = _clean_scorers(body.get("scorers"))
-    db.upsert_result(match_id, home, away, status, scorers, int(time.time()))
+    winner = (body.get("winner") or "").strip()[:40] or None
+    db.upsert_result(match_id, home, away, status, scorers, int(time.time()), winner)
     return jsonify({"ok": True})
 
 

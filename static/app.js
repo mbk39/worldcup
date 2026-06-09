@@ -12,7 +12,10 @@ let RESULTS = {};       // actual match results: match_id -> {home,away,status,s
 let LIVE_SCORES = {};   // this user's continuous per-match picks
 let LOCKS = { tournamentLocked: false, lockedMatches: new Set(), tournamentLockTime: 0 };
 const ZERO_PTS = { total: 0, perMatch: {} };
-let MYPOINTS = { tournament: { ...ZERO_PTS }, live: { ...ZERO_PTS } };
+const ZERO_POINTS = () => ({ tournament: { ...ZERO_PTS }, group: { ...ZERO_PTS }, knockout: { ...ZERO_PTS } });
+let MYPOINTS = ZERO_POINTS();
+let LEAGUE_DATA = null, LEAGUE_TRACK = "tournament";
+let ACTUAL_BRACKET = {};   // real knockout bracket resolved from results
 
 async function fetchResults() {
   const r = await api("GET", "/api/results");
@@ -28,9 +31,9 @@ async function fetchLive() {
   LIVE_SCORES = r.ok ? (r.data.scores || {}) : {};
 }
 async function fetchMyPoints() {
-  if (!currentUser) { MYPOINTS = { tournament: { ...ZERO_PTS }, live: { ...ZERO_PTS } }; return; }
+  if (!currentUser) { MYPOINTS = ZERO_POINTS(); return; }
   const r = await api("GET", "/api/me/points");
-  MYPOINTS = r.ok ? r.data : { tournament: { ...ZERO_PTS }, live: { ...ZERO_PTS } };
+  MYPOINTS = r.ok ? r.data : ZERO_POINTS();
 }
 
 // ================================================================ helpers
@@ -179,7 +182,7 @@ async function renderLive() {
   await fetchResults();
   await fetchMyPoints();
   document.getElementById("live-points").innerHTML =
-    `Your live points so far: <b>${MYPOINTS.live?.total || 0}</b>`;
+    `Your rolling points so far: <b>${MYPOINTS.group?.total || 0}</b>`;
 
   const fx = [...DATA.fixtures].filter(f => f.date)
     .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
@@ -194,7 +197,7 @@ async function renderLive() {
     const lockChip = locked ? `<span class="lockchip">🔒</span>` : "";
     let pill = "";
     if (res && res.home != null && sc.home != null && sc.away != null) {
-      const p = MYPOINTS.live?.perMatch?.[f.id];
+      const p = MYPOINTS.group?.perMatch?.[f.id];
       if (p != null) pill = `<span class="pts pts${p}">+${p}</span>`;
     }
     const inputs = locked
@@ -225,7 +228,7 @@ async function onLiveChange(e) {
   if (ok) LIVE_SCORES = data.scores;
   await fetchMyPoints();
   document.getElementById("live-points").innerHTML =
-    `Your live points so far: <b>${MYPOINTS.live?.total || 0}</b>`;
+    `Your rolling points so far: <b>${MYPOINTS.group?.total || 0}</b>`;
 }
 
 function wireSubToggle() {
@@ -497,22 +500,35 @@ async function openLeague(code) {
   const leave = document.getElementById("leave-league");
   if (leave) leave.addEventListener("click", () => leaveLeague(data.code));
 
-  // Members board — server already sorts by points (then progress, name).
-  const members = data.members;
-  document.getElementById("league-note").innerHTML = data.resultsScored
-    ? `Ranked by total points — ${data.resultsScored} match${data.resultsScored === 1 ? "" : "es"} scored so far. <b>Tour</b> = locked pre-tournament bracket · <b>Live</b> = continuous per-match picks.`
-    : "No results in yet. <b>Tour</b> = your locked bracket · <b>Live</b> = continuous per-match picks.";
-  let html = `<tr><th>#</th><th>Player</th><th>Tour</th><th>Live</th><th>Total</th></tr>`;
+  LEAGUE_DATA = data;
+  document.querySelectorAll("#league-tracks .subtab").forEach(b =>
+    b.onclick = () => { LEAGUE_TRACK = b.dataset.track; renderLeagueBoard(); });
+  renderLeagueBoard();
+}
+
+const TRACK_LABEL = { tournament: "Pre-tournament bracket", group: "Rolling group picks", knockout: "Knockout picks" };
+function renderLeagueBoard() {
+  const data = LEAGUE_DATA;
+  if (!data) return;
+  const track = LEAGUE_TRACK;
+  document.querySelectorAll("#league-tracks .subtab").forEach(b =>
+    b.classList.toggle("active", b.dataset.track === track));
+
+  const note = document.getElementById("league-note");
+  if (track === "knockout" && !data.knockoutReady) {
+    note.innerHTML = "🔒 The Knockout league opens once the group stage finishes and the Round-of-32 is set.";
+  } else {
+    note.innerHTML = `<b>${TRACK_LABEL[track]}</b> — ${data.resultsScored || 0} group match${data.resultsScored === 1 ? "" : "es"} scored so far.`;
+  }
+
+  const members = [...data.members].sort((a, b) =>
+    ((b.points?.[track] || 0) - (a.points?.[track] || 0)) || a.displayName.localeCompare(b.displayName));
+  let html = `<tr><th>#</th><th>Player</th><th>Points</th></tr>`;
   members.forEach((m, i) => {
-    const pts = m.points || { tournament: 0, live: 0, total: 0 };
     const me = currentUser && m.userId === currentUser.id ? ' class="me"' : "";
-    html += `<tr${me}>
-      <td>${i + 1}</td>
+    html += `<tr${me}><td>${i + 1}</td>
       <td>${escapeHTML(m.displayName)}${me ? " (you)" : ""}</td>
-      <td>${pts.tournament}</td>
-      <td>${pts.live}</td>
-      <td><b>${pts.total}</b></td>
-    </tr>`;
+      <td><b>${m.points?.[track] || 0}</b></td></tr>`;
   });
   document.getElementById("league-board").innerHTML = html;
 }
@@ -531,10 +547,17 @@ async function deleteLeague(code) {
 }
 
 // ================================================================ admin panel
+async function fetchActualBracket() {
+  const r = await api("GET", "/api/bracket/actual");
+  ACTUAL_BRACKET = r.ok ? (r.data.bracket || {}) : {};
+}
+
 async function renderAdmin() {
   await fetchResults();
+  await fetchActualBracket();
   await Promise.all([renderAdminLeagues(), renderAdminUsers()]);
   renderAdminResults();
+  renderAdminKoResults();
   document.getElementById("admin-members").classList.add("hidden");
   const close = document.getElementById("admin-members-close");
   close.onclick = () => document.getElementById("admin-members").classList.add("hidden");
@@ -588,6 +611,57 @@ async function saveAdminResult(row) {
   setTimeout(() => row.classList.remove("saved", "err"), 900);
   await fetchResults();
   await fetchMyPoints();
+}
+
+function renderAdminKoResults() {
+  const wrap = document.getElementById("admin-ko-results");
+  if (!wrap) return;
+  let html = "";
+  DATA.bracket.forEach(round => {
+    html += `<div class="ko-round-h">${round.name}</div>`;
+    round.matches.forEach(m => {
+      const a = ACTUAL_BRACKET[String(m.id)] || {};
+      const known = a.teamA && a.teamB;
+      const r = RESULTS["K-" + m.id] || {};
+      const label = known ? `${a.teamA} v ${a.teamB}` : `${m.labelA} v ${m.labelB}`;
+      const adv = known
+        ? `<select class="ako-w"><option value="">advancer…</option>
+             <option${r.winner === a.teamA ? " selected" : ""}>${escapeHTML(a.teamA)}</option>
+             <option${r.winner === a.teamB ? " selected" : ""}>${escapeHTML(a.teamB)}</option></select>`
+        : `<input class="ako-w" type="text" value="${escapeHTML(r.winner || "")}" placeholder="advancer">`;
+      html += `<div class="ares-row ko" data-mid="K-${m.id}">
+        <span class="ares-teams">M${m.id}: ${escapeHTML(label)}</span>
+        <input class="ako-h" type="number" min="0" max="99" value="${r.home ?? ""}" placeholder="–">
+        <input class="ako-a" type="number" min="0" max="99" value="${r.away ?? ""}" placeholder="–">
+        <select class="ako-st">
+          <option value="scheduled"${(!r.status || r.status === "scheduled") ? " selected" : ""}>Scheduled</option>
+          <option value="live"${r.status === "live" ? " selected" : ""}>Live</option>
+          <option value="ft"${r.status === "ft" ? " selected" : ""}>FT</option>
+        </select>
+        ${adv}
+      </div>`;
+    });
+  });
+  wrap.innerHTML = html;
+  wrap.querySelectorAll(".ares-row.ko").forEach(row =>
+    row.querySelectorAll("input,select").forEach(el =>
+      el.addEventListener("change", () => saveAdminKoResult(row))));
+}
+
+async function saveAdminKoResult(row) {
+  const mid = row.dataset.mid;
+  const body = {
+    home: row.querySelector(".ako-h").value,
+    away: row.querySelector(".ako-a").value,
+    status: row.querySelector(".ako-st").value,
+    winner: row.querySelector(".ako-w").value,
+  };
+  const { ok } = await api("PUT", "/api/admin/results/" + mid, body);
+  row.classList.toggle("saved", ok);
+  row.classList.toggle("err", !ok);
+  await fetchResults();
+  await fetchActualBracket();   // an advancer may reveal the next round's teams
+  renderAdminKoResults();
 }
 
 async function renderAdminLeagues() {
@@ -892,7 +966,7 @@ async function renderResults() {
     let predLine = "";
     const p = LIVE_SCORES[f.id];
     if (p && p.home != null && p.away != null) {
-      const pts = MYPOINTS.live?.perMatch ? MYPOINTS.live.perMatch[f.id] : undefined;
+      const pts = MYPOINTS.group?.perMatch ? MYPOINTS.group.perMatch[f.id] : undefined;
       const ptsTxt = (hasScore && pts != null)
         ? ` <span class="pts pts${pts}">+${pts}</span>` : "";
       predLine = `<div class="your-pick">Your live pick: <b>${p.home}–${p.away}</b>${ptsTxt}</div>`;

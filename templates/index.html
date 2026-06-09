@@ -115,6 +115,11 @@
             </div>
           </div>
           <div id="league-detail-actions" class="league-detail-actions"></div>
+          <div class="subtoggle" id="league-tracks">
+            <button class="subtab active" data-track="tournament">Pre-tournament</button>
+            <button class="subtab" data-track="group">Rolling</button>
+            <button class="subtab" data-track="knockout">Knockout</button>
+          </div>
           <div id="league-note" class="hint"></div>
           <table id="league-board"></table>
         </div>
@@ -144,6 +149,10 @@
       <h3 class="admin-h">Match results (group stage)</h3>
       <p class="hint">Enter the score, status and goalscorers. Saves automatically; points update for everyone.</p>
       <div id="admin-results"></div>
+
+      <h3 class="admin-h">Knockout results</h3>
+      <p class="hint">Set the score and the advancing team (needed for draws settled on penalties). Teams appear once the earlier rounds are decided. Saves automatically.</p>
+      <div id="admin-ko-results"></div>
     </section>
 
   <!-- Auth modal -->

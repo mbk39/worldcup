@@ -451,3 +451,8 @@ table { width: 100%; border-collapse: collapse; font-size: 13px; }
   padding: 4px 8px; white-space: nowrap;
 }
 #groups-grid input:disabled { opacity: .55; cursor: not-allowed; }
+
+/* Admin knockout results */
+.ko-round-h { margin: 14px 0 4px; font-size: 12px; font-weight: 700; color: var(--accent2); text-transform: uppercase; letter-spacing: .5px; }
+.ares-row.ko { grid-template-columns: minmax(220px,1.8fr) 44px 44px 104px 1.3fr; }
+.ares-row.ko .ako-w { width: 100%; }

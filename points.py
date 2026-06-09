@@ -1,9 +1,19 @@
-"""Scoring: 3 points for an exact score, 1 point for the correct result.
+"""Scoring across three tracks.
 
-Group stage scoring (knockout scoring is added in a later stage). A "result"
-means the same outcome — home win / away win / draw — even if the scoreline
-differs.
+  * Group / rolling: 3 for an exact score, 1 for the correct result (W/D/L).
+  * Tournament (locked bracket): group points + points for each team correctly
+    predicted to REACH each knockout round, plus a champion bonus.
+  * Knockout (live): 3 for an exact full-time score, 1 for the correct advancer.
+
+A "result" means the same outcome even if the scoreline differs.
 """
+
+import engine
+from data import R16, QF, SF, FINAL
+
+# Points for each of YOUR teams that actually reaches a given knockout round.
+KO_ROUND_POINTS = {"Round of 16": 1, "Quarter-finals": 2, "Semi-finals": 3, "Final": 5}
+CHAMPION_BONUS = 10
 
 
 def _outcome(h, a):
@@ -29,10 +39,9 @@ def _pred_score(group_scores, mid):
 
 
 def compute_points(state, results):
-    """Total + per-match points for one prediction state against results.
+    """Group/rolling track: 3 exact / 1 result over group matches with a score.
 
-    Only group matches with a recorded score (status live/ft) are scored.
-    Returns {"total": int, "perMatch": {match_id: pts}, "scored": int}.
+    Returns {"total", "perMatch", "scored"}.
     """
     group_scores = (state or {}).get("groupScores", {}) or {}
     per = {}
@@ -48,3 +57,89 @@ def compute_points(state, results):
         per[mid] = pts
         total += pts
     return {"total": total, "perMatch": per, "scored": scored}
+
+
+# --------------------------------------------------------------- bracket helpers
+def _real_group_scores(results):
+    return {mid: {"home": r["home"], "away": r["away"]}
+            for mid, r in results.items()
+            if mid.startswith("G-") and isinstance(r.get("home"), int)
+            and isinstance(r.get("away"), int)}
+
+
+def _actual_advancers(results):
+    """Knockout advancers (by match number) from results' winner field."""
+    return {mid[2:]: r["winner"] for mid, r in results.items()
+            if mid.startswith("K-") and r.get("winner")}
+
+
+def resolve_actual_bracket(results):
+    gs = _real_group_scores(results)
+    standings = engine.compute_all_groups(gs)
+    bracket, _, _ = engine.resolve_bracket(standings, gs, _actual_advancers(results))
+    return bracket
+
+
+def _reached_sets(bracket):
+    """Teams that are participants in each knockout round's matches."""
+    out = {}
+    for name, table in (("Round of 16", R16), ("Quarter-finals", QF),
+                        ("Semi-finals", SF), ("Final", FINAL)):
+        teams = set()
+        for mid in table:
+            m = bracket.get(mid, {})
+            teams.update(t for t in (m.get("teamA"), m.get("teamB")) if t)
+        out[name] = teams
+    return out
+
+
+def compute_tournament_ko_points(user_state, results):
+    """Points for each of the user's teams that actually reached each KO round."""
+    actual = resolve_actual_bracket(results)
+    actual_reached = _reached_sets(actual)
+    actual_champ = actual.get(104, {}).get("winner")
+
+    gs = (user_state or {}).get("groupScores", {}) or {}
+    ko = (user_state or {}).get("koPicks", {}) or {}
+    u_bracket, _, _ = engine.resolve_bracket(engine.compute_all_groups(gs), gs, ko)
+    u_reached = _reached_sets(u_bracket)
+    u_champ = u_bracket.get(104, {}).get("winner")
+
+    breakdown, total = {}, 0
+    for rnd, pts in KO_ROUND_POINTS.items():
+        hit = len(u_reached[rnd] & actual_reached[rnd])
+        breakdown[rnd] = hit * pts
+        total += hit * pts
+    champ = CHAMPION_BONUS if (u_champ and u_champ == actual_champ) else 0
+    breakdown["champion"] = champ
+    return {"total": total + champ, "breakdown": breakdown}
+
+
+def compute_tournament_points(user_state, results):
+    """Locked-bracket track: group points + knockout advancer/champion points."""
+    g = compute_points(user_state, results)
+    ko = compute_tournament_ko_points(user_state, results)
+    return {"total": g["total"] + ko["total"], "group": g["total"], "ko": ko["total"],
+            "perMatch": g["perMatch"], "koBreakdown": ko["breakdown"]}
+
+
+def compute_knockout_live_points(ko_scores, results):
+    """Knockout-live track: 3 for exact full-time score, 1 for correct advancer."""
+    ko_scores = ko_scores or {}
+    per, total = {}, 0
+    for mid, r in results.items():
+        if not mid.startswith("K-"):
+            continue
+        if not (isinstance(r.get("home"), int) and isinstance(r.get("away"), int)):
+            continue
+        pred = ko_scores.get(mid) or {}
+        ph, pa = pred.get("home"), pred.get("away")
+        pts = 0
+        if isinstance(ph, int) and isinstance(pa, int):
+            if (ph, pa) == (r["home"], r["away"]):
+                pts = 3
+            elif r.get("winner") and pred.get("adv") and r["winner"] == pred["adv"]:
+                pts = 1
+        per[mid] = pts
+        total += pts
+    return {"total": total, "perMatch": per}

@@ -64,16 +64,26 @@ def init_db():
                 updated INTEGER NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS live_ko_predictions (
+                user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                scores  TEXT NOT NULL,   -- JSON {'K-73': {home, away, adv}}
+                updated INTEGER NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS results (
                 match_id TEXT PRIMARY KEY,   -- 'G-A-1' for groups, 'K-73' for knockout
                 home     INTEGER,
                 away     INTEGER,
                 status   TEXT NOT NULL DEFAULT 'scheduled',  -- scheduled|live|ft
                 scorers  TEXT NOT NULL DEFAULT '{}',          -- JSON {home:[],away:[]}
+                winner   TEXT,                                -- knockout advancer (esp. on penalties)
                 updated  INTEGER NOT NULL
             );
             """
         )
+        cols = [r["name"] for r in conn.execute("PRAGMA table_info(results)")]
+        if "winner" not in cols:
+            conn.execute("ALTER TABLE results ADD COLUMN winner TEXT")
 
 
 # --------------------------------------------------------------- users
@@ -284,16 +294,45 @@ def get_league_member_live(league_id):
     return {r["user_id"]: (json.loads(r["scores"]) if r["scores"] else {}) for r in rows}
 
 
-# --------------------------------------------------------------- results
-def upsert_result(match_id, home, away, status, scorers, updated):
+def save_live_ko(user_id, scores, updated):
     with _lock, _conn() as conn:
         conn.execute(
-            """INSERT INTO results(match_id,home,away,status,scorers,updated)
-               VALUES(?,?,?,?,?,?)
+            """INSERT INTO live_ko_predictions(user_id,scores,updated) VALUES(?,?,?)
+               ON CONFLICT(user_id) DO UPDATE SET scores=excluded.scores, updated=excluded.updated""",
+            (user_id, json.dumps(scores), updated),
+        )
+
+
+def get_live_ko(user_id):
+    with _conn() as conn:
+        r = conn.execute(
+            "SELECT scores FROM live_ko_predictions WHERE user_id=?", (user_id,)
+        ).fetchone()
+    return json.loads(r["scores"]) if r else {}
+
+
+def get_league_member_live_ko(league_id):
+    with _conn() as conn:
+        rows = conn.execute(
+            """SELECT m.user_id, l.scores AS scores
+               FROM league_members m
+               LEFT JOIN live_ko_predictions l ON l.user_id = m.user_id
+               WHERE m.league_id = ?""",
+            (league_id,),
+        ).fetchall()
+    return {r["user_id"]: (json.loads(r["scores"]) if r["scores"] else {}) for r in rows}
+
+
+# --------------------------------------------------------------- results
+def upsert_result(match_id, home, away, status, scorers, updated, winner=None):
+    with _lock, _conn() as conn:
+        conn.execute(
+            """INSERT INTO results(match_id,home,away,status,scorers,winner,updated)
+               VALUES(?,?,?,?,?,?,?)
                ON CONFLICT(match_id) DO UPDATE SET
                    home=excluded.home, away=excluded.away, status=excluded.status,
-                   scorers=excluded.scorers, updated=excluded.updated""",
-            (match_id, home, away, status, json.dumps(scorers), updated),
+                   scorers=excluded.scorers, winner=excluded.winner, updated=excluded.updated""",
+            (match_id, home, away, status, json.dumps(scorers), winner, updated),
         )
 
 
@@ -309,7 +348,8 @@ def get_all_results():
     for r in rows:
         out[r["match_id"]] = {
             "home": r["home"], "away": r["away"], "status": r["status"],
-            "scorers": json.loads(r["scorers"] or "{}"), "updated": r["updated"],
+            "scorers": json.loads(r["scorers"] or "{}"),
+            "winner": r["winner"], "updated": r["updated"],
         }
     return out
 
