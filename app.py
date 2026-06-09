@@ -518,10 +518,13 @@ def api_save_live_ko(user):
             continue
         h, a = _parse_score((sc or {}).get("home")), _parse_score((sc or {}).get("away"))
         adv = ((sc or {}).get("adv") or "").strip()[:40] or None
+        method = ((sc or {}).get("method") or "").strip().lower()
+        if method not in ("ft", "aet", "pens"):
+            method = None
         if h is None and a is None:
             existing.pop(mid, None)
         else:
-            existing[mid] = {"home": h, "away": a, "adv": adv}
+            existing[mid] = {"home": h, "away": a, "adv": adv, "method": method}
     db.save_live_ko(user["id"], existing, int(time.time()))
     return jsonify({"ok": True, "scores": existing, "rejected": rejected})
 

@@ -332,14 +332,24 @@ async function renderLiveKnockout() {
         if (p != null) pill = `<span class="pts pts${p}">+${p}</span>`;
       }
       const isDraw = sc.home != null && sc.home === sc.away;
-      const penPicker = `<div class="ko-pen${isDraw ? "" : " hidden"}">
-          <span class="ko-pen-label">Penalties:</span>
-          <button type="button" class="pen-btn${sc.adv === a.teamA ? " sel" : ""}" data-team="${escapeHTML(a.teamA)}">${escapeHTML(a.teamA)}</button>
-          <button type="button" class="pen-btn${sc.adv === a.teamB ? " sel" : ""}" data-team="${escapeHTML(a.teamB)}">${escapeHTML(a.teamB)}</button>
+      const method = sc.method || (isDraw ? "pens" : "ft");
+      const methLabel = method === "pens" ? "pens" : (method === "aet" ? "AET" : "");
+      const decider = `<div class="ko-decider" data-method="${method}">
+          <span class="ko-dec-label">Decided in</span>
+          <div class="ko-meth">
+            <button type="button" class="meth-btn${method === "ft" ? " sel" : ""}" data-m="ft" title="Normal time">90′</button>
+            <button type="button" class="meth-btn${method === "aet" ? " sel" : ""}" data-m="aet" title="After extra time">A.E.T.</button>
+            <button type="button" class="meth-btn${method === "pens" ? " sel" : ""}" data-m="pens" title="On penalties">⚽ Pens</button>
+          </div>
+          <div class="ko-winner${method === "pens" ? "" : " hidden"}">
+            <span class="ko-pen-label">winner</span>
+            <button type="button" class="win-btn${sc.adv === a.teamA ? " sel" : ""}" data-team="${escapeHTML(a.teamA)}">${teamHTML(a.teamA)}</button>
+            <button type="button" class="win-btn${sc.adv === a.teamB ? " sel" : ""}" data-team="${escapeHTML(a.teamB)}">${teamHTML(a.teamB)}</button>
+          </div>
         </div>`;
-      const advNote = sc.adv ? ` <span class="adv-note">→ ${escapeHTML(sc.adv)}</span>` : "";
+      const advNote = sc.adv ? ` <span class="adv-note">→ ${escapeHTML(sc.adv)}${methLabel ? " (" + methLabel + ")" : ""}</span>` : "";
       const inputs = locked
-        ? `<span class="locked-pick">${sc.home ?? "–"} – ${sc.away ?? "–"}${sc.adv && isDraw ? " (" + escapeHTML(sc.adv) + ")" : ""}</span>`
+        ? `<span class="locked-pick">${sc.home ?? "–"} – ${sc.away ?? "–"}${sc.adv && isDraw ? " pens: " + escapeHTML(sc.adv) : (methLabel === "AET" ? " (AET)" : "")}</span>`
         : `<input type="number" min="0" max="99" class="ko-h" value="${sc.home ?? ""}">` +
           `<span>–</span><input type="number" min="0" max="99" class="ko-a" value="${sc.away ?? ""}">`;
       html += `<div class="live-meta"><span class="when">${when}</span> ${resBadge} ${lockChip} ${pill}${locked ? "" : advNote}</div>
@@ -348,45 +358,71 @@ async function renderLiveKnockout() {
           <span class="score">${inputs}</span>
           <span class="away">${teamHTML(a.teamB)}</span>
         </div>
-        ${locked ? "" : `<div class="ko-pen-row">${penPicker}</div>`}`;
+        ${locked ? "" : `<div class="ko-dec-row">${decider}</div>`}`;
     });
   });
   wrap.innerHTML = html;
   wrap.querySelectorAll(".fixture:not(.locked)").forEach(row => {
     row.querySelectorAll("input").forEach(i => {
-      i.addEventListener("input", () => toggleKoPen(row));
+      i.addEventListener("input", () => syncKoDecider(row));
       i.addEventListener("change", () => onLiveKoChange(row));
       i.addEventListener("focus", () => i.select());
     });
-    const pen = row.nextElementSibling?.querySelector(".ko-pen");
-    if (pen) pen.querySelectorAll(".pen-btn").forEach(btn =>
-      btn.addEventListener("click", () => {
-        pen.querySelectorAll(".pen-btn").forEach(b => b.classList.toggle("sel", b === btn));
-        onLiveKoChange(row);
-      }));
+    const dec = row.nextElementSibling?.querySelector(".ko-decider");
+    if (dec) {
+      dec.querySelectorAll(".meth-btn").forEach(btn =>
+        btn.addEventListener("click", () => {
+          if (btn.classList.contains("disabled")) return;
+          dec.querySelectorAll(".meth-btn").forEach(b => b.classList.toggle("sel", b === btn));
+          dec.dataset.method = btn.dataset.m;
+          syncKoDecider(row);
+          onLiveKoChange(row);
+        }));
+      dec.querySelectorAll(".win-btn").forEach(btn =>
+        btn.addEventListener("click", () => {
+          dec.querySelectorAll(".win-btn").forEach(b => b.classList.toggle("sel", b === btn));
+          onLiveKoChange(row);
+        }));
+    }
+    syncKoDecider(row);
   });
 }
 
-function toggleKoPen(row) {
-  const h = row.querySelector(".ko-h").value, a = row.querySelector(".ko-a").value;
-  const pen = row.nextElementSibling?.querySelector(".ko-pen");
-  if (pen) pen.classList.toggle("hidden", !(h !== "" && a !== "" && +h === +a));
+// Keep the decider panel consistent with the entered score.
+function syncKoDecider(row) {
+  const dec = row.nextElementSibling?.querySelector(".ko-decider");
+  if (!dec) return;
+  const hv = row.querySelector(".ko-h").value, av = row.querySelector(".ko-a").value;
+  const both = hv !== "" && av !== "";
+  const isDraw = both && +hv === +av;
+  const btn = m => dec.querySelector(`.meth-btn[data-m="${m}"]`);
+  // A drawn scoreline can only be settled on penalties; a decisive one cannot.
+  btn("ft").classList.toggle("disabled", isDraw);
+  btn("aet").classList.toggle("disabled", isDraw);
+  btn("pens").classList.toggle("disabled", both && !isDraw);
+  let method = dec.dataset.method || "ft";
+  if (isDraw) method = "pens";
+  else if (both && method === "pens") method = "ft";
+  dec.dataset.method = method;
+  dec.querySelectorAll(".meth-btn").forEach(b => b.classList.toggle("sel", b.dataset.m === method));
+  dec.querySelector(".ko-winner").classList.toggle("hidden", method !== "pens");
 }
 
 async function onLiveKoChange(row) {
   const kid = row.dataset.mid;
   const h = row.querySelector(".ko-h").value, a = row.querySelector(".ko-a").value;
-  const pen = row.nextElementSibling?.querySelector(".ko-pen");
+  const dec = row.nextElementSibling?.querySelector(".ko-decider");
+  const method = dec?.dataset.method || (h !== "" && a !== "" && +h === +a ? "pens" : "ft");
   let adv = null;
   if (h !== "" && a !== "") {
     if (+h === +a) {
-      const sel = pen?.querySelector(".pen-btn.sel");
+      const sel = dec?.querySelector(".win-btn.sel");
       adv = sel ? sel.dataset.team : null;
     } else {
       adv = (+h > +a) ? row.dataset.a : row.dataset.b;
     }
   }
-  const { ok, data } = await api("POST", "/api/live/ko", { scores: { [kid]: { home: h, away: a, adv } } });
+  const { ok, data } = await api("POST", "/api/live/ko", { scores: { [kid]: { home: h, away: a, adv, method } } });
   if (ok) LIVE_KO = data.scores;
   await fetchMyPoints();
   document.getElementById("live-ko-points").innerHTML =
@@ -434,32 +470,79 @@ function renderMap() {
   }
 }
 
+// Venue name -> Wikipedia page title (for the live stadium photo).
+const VENUE_WIKI = {
+  "Estadio Banorte": "Estadio Azteca",
+  "Estadio Akron": "Estadio Akron",
+  "Estadio BBVA": "Estadio BBVA",
+  "BMO Field": "BMO Field",
+  "BC Place": "BC Place",
+  "SoFi Stadium": "SoFi Stadium",
+  "Levi's Stadium": "Levi's Stadium",
+  "Lumen Field": "Lumen Field",
+  "MetLife Stadium": "MetLife Stadium",
+  "Gillette Stadium": "Gillette Stadium",
+  "Lincoln Financial Field": "Lincoln Financial Field",
+  "Hard Rock Stadium": "Hard Rock Stadium",
+  "Mercedes-Benz Stadium": "Mercedes-Benz Stadium",
+  "NRG Stadium": "NRG Stadium",
+  "AT&T Stadium": "AT&T Stadium",
+  "GEHA Field at Arrowhead Stadium": "Arrowhead Stadium",
+};
+const VENUE_PHOTO_CACHE = {};
+async function loadVenuePhoto(title, wrap) {
+  if (!wrap || !title) return;
+  const img = wrap.querySelector(".vm-photo");
+  try {
+    if (VENUE_PHOTO_CACHE[title] === undefined) {
+      const r = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`);
+      const j = await r.json();
+      let src = (j.thumbnail && j.thumbnail.source) || (j.originalimage && j.originalimage.source) || null;
+      if (src) src = src.replace(/\/\d+px-/, "/640px-"); // ask for a wider crop
+      VENUE_PHOTO_CACHE[title] = src;
+    }
+    const src = VENUE_PHOTO_CACHE[title];
+    if (src) {
+      img.onload = () => { wrap.style.display = ""; };   // reveal only once it actually renders
+      img.onerror = () => { wrap.remove(); };
+      img.src = src;
+    } else {
+      wrap.remove();
+    }
+  } catch (e) { wrap.remove(); }
+}
+
 function showVenueMatches(name) {
   const panel = document.getElementById("venue-matches");
   if (!panel) return;
+  const v = DATA.venues[name] || {};
   const rows = [];
   DATA.fixtures.filter(f => f.venue === name).forEach(f => rows.push({
     date: f.date, time: f.time,
-    teams: `${teamHTML(f.home)} <span class="vm-vs">v</span> ${teamHTML(f.away)}`,
+    home: teamHTML(f.home), away: teamHTML(f.away),
     sub: `Group ${f.group}`,
   }));
   DATA.bracket.forEach(r => r.matches.forEach(m => {
     if (m.venue === name) rows.push({
       date: m.date, time: m.time,
-      teams: `<span class="vm-slot">${m.labelA} <span class="vm-vs">v</span> ${m.labelB}</span>`,
+      home: `<span class="vm-slot">${m.labelA}</span>`, away: `<span class="vm-slot">${m.labelB}</span>`,
       sub: `Match ${m.id} · ${r.name}`,
     });
   }));
   rows.sort((a, b) => ((a.date || "") + (a.time || "")).localeCompare((b.date || "") + (b.time || "")));
 
+  const wiki = VENUE_WIKI[name];
   panel.innerHTML =
-    `<div class="vm-head"><b>${escapeHTML(name)}</b> · ${rows.length} match${rows.length === 1 ? "" : "es"}` +
+    `<div class="vm-head"><b>${escapeHTML(name)}</b> <span class="vm-sub">${escapeHTML(v.city || "")}${v.country ? ", " + escapeHTML(v.country) : ""} · ${rows.length} match${rows.length === 1 ? "" : "es"}</span>` +
     `<button class="btn ghost small" id="vm-close">Close</button></div>` +
+    (wiki ? `<figure class="vm-photo-wrap" style="display:none"><img class="vm-photo" alt="${escapeHTML(name)}">` +
+            `<figcaption class="vm-photo-cap">📷 ${escapeHTML(name)} — via Wikipedia</figcaption></figure>` : "") +
     rows.map(x => `<div class="vm-row">
       <span class="vm-when">${x.date ? fmtDate(x.date) : ""}${x.time ? " · " + x.time : ""}</span>
-      <span class="vm-teams">${x.teams}</span>
+      <span class="vm-match"><span class="vm-home">${x.home}</span><span class="vm-vs">v</span><span class="vm-away">${x.away}</span></span>
       <span class="vm-sub">${x.sub}</span></div>`).join("");
   panel.classList.remove("hidden");
+  if (wiki) loadVenuePhoto(wiki, panel.querySelector(".vm-photo-wrap"));
   document.getElementById("vm-close").onclick = () => panel.classList.add("hidden");
   panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
@@ -1185,15 +1268,17 @@ function renderGroups() {
         fxWrap.appendChild(lbl);
       }
       const sc = state.groupScores[fx.id] || {};
+      const venueTip = fx.venue ? `${fx.venue}, ${fx.city}` : "";
       if (fx.date) {
         const meta = document.createElement("div");
         meta.className = "fixture-meta";
-        meta.innerHTML = `<span class="when">${fmtDate(fx.date)} · ${fx.time} BST` +
-          (fx.venue ? ` · 📍 ${fx.venue}, ${fx.city}` : "") + `</span>`;
+        meta.innerHTML = `<span class="when">${fmtDate(fx.date)} · ${fx.time} BST</span>` +
+          (venueTip ? `<span class="loc-hint" title="${escapeHTML(venueTip)}">📍 venue</span>` : "");
         fxWrap.appendChild(meta);
       }
       const line = document.createElement("div");
       line.className = "fixture-line";
+      if (venueTip) line.title = "📍 " + venueTip;
       const row = document.createElement("div");
       row.className = "fixture";
       row.innerHTML = `
