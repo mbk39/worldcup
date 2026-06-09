@@ -137,31 +137,32 @@ def build_group_fixtures():
 #   {"type": "third", "groups": [...]}    -> a 3rd-placed team from one of groups
 #   {"type": "match", "match": 73}        -> winner of match 73
 
+# Official FIFA 2026 match numbering and slot assignments.
 R32 = {
-    73: ({"type": "winner", "group": "A"}, {"type": "third", "groups": list("CEFHI")}),
-    74: ({"type": "winner", "group": "C"}, {"type": "runner", "group": "F"}),
-    75: ({"type": "winner", "group": "E"}, {"type": "third", "groups": list("ABCDF")}),
-    76: ({"type": "winner", "group": "F"}, {"type": "runner", "group": "C"}),
-    77: ({"type": "runner", "group": "E"}, {"type": "runner", "group": "I"}),
-    78: ({"type": "winner", "group": "I"}, {"type": "third", "groups": list("CDFGH")}),
-    79: ({"type": "runner", "group": "A"}, {"type": "runner", "group": "B"}),
+    73: ({"type": "runner", "group": "A"}, {"type": "runner", "group": "B"}),
+    74: ({"type": "winner", "group": "E"}, {"type": "third", "groups": list("ABCDF")}),
+    75: ({"type": "winner", "group": "F"}, {"type": "runner", "group": "C"}),
+    76: ({"type": "winner", "group": "C"}, {"type": "runner", "group": "F"}),
+    77: ({"type": "winner", "group": "I"}, {"type": "third", "groups": list("CDFGH")}),
+    78: ({"type": "runner", "group": "E"}, {"type": "runner", "group": "I"}),
+    79: ({"type": "winner", "group": "A"}, {"type": "third", "groups": list("CEFHI")}),
     80: ({"type": "winner", "group": "L"}, {"type": "third", "groups": list("EHIJK")}),
-    81: ({"type": "winner", "group": "G"}, {"type": "third", "groups": list("AEHIJ")}),
-    82: ({"type": "winner", "group": "D"}, {"type": "third", "groups": list("BEFIJ")}),
-    83: ({"type": "winner", "group": "H"}, {"type": "runner", "group": "J"}),
-    84: ({"type": "runner", "group": "K"}, {"type": "runner", "group": "L"}),
+    81: ({"type": "winner", "group": "D"}, {"type": "third", "groups": list("BEFIJ")}),
+    82: ({"type": "winner", "group": "G"}, {"type": "third", "groups": list("AEHIJ")}),
+    83: ({"type": "runner", "group": "K"}, {"type": "runner", "group": "L"}),
+    84: ({"type": "winner", "group": "H"}, {"type": "runner", "group": "J"}),
     85: ({"type": "winner", "group": "B"}, {"type": "third", "groups": list("EFGIJ")}),
-    86: ({"type": "runner", "group": "D"}, {"type": "runner", "group": "G"}),
-    87: ({"type": "winner", "group": "J"}, {"type": "runner", "group": "H"}),
-    88: ({"type": "winner", "group": "K"}, {"type": "third", "groups": list("DEIJL")}),
+    86: ({"type": "winner", "group": "J"}, {"type": "runner", "group": "H"}),
+    87: ({"type": "winner", "group": "K"}, {"type": "third", "groups": list("DEIJL")}),
+    88: ({"type": "runner", "group": "D"}, {"type": "runner", "group": "G"}),
 }
 
 # Round of 16 .. Final: (matchA, matchB) -> winners meet.
 R16 = {
-    89: (73, 79), 90: (74, 77), 91: (75, 78), 92: (76, 81),
-    93: (82, 86), 94: (87, 83), 95: (80, 84), 96: (85, 88),
+    89: (74, 77), 90: (73, 75), 91: (76, 78), 92: (79, 80),
+    93: (83, 84), 94: (81, 82), 95: (86, 88), 96: (85, 87),
 }
-QF = {97: (89, 90), 98: (91, 92), 99: (93, 94), 100: (95, 96)}
+QF = {97: (89, 90), 98: (93, 94), 99: (91, 92), 100: (95, 96)}
 SF = {101: (97, 98), 102: (99, 100)}
 FINAL = {104: (101, 102)}
 THIRD_PLACE_PLAYOFF = {103: (101, 102)}  # losers of the semis

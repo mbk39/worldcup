@@ -1318,16 +1318,16 @@ async function renderResults() {
 
 // Mirrored bracket: left half feeds SF 101, right half feeds SF 102, Final in centre.
 const BK_LEFT = [
-  ["Round of 32", [73, 79, 74, 77, 75, 78, 76, 81]],
-  ["Round of 16", [89, 90, 91, 92]],
+  ["Round of 32", [74, 77, 73, 75, 83, 84, 81, 82]],
+  ["Round of 16", [89, 90, 93, 94]],
   ["Quarter-finals", [97, 98]],
   ["Semi-final", [101]],
 ];
 const BK_RIGHT = [
   ["Semi-final", [102]],
   ["Quarter-finals", [99, 100]],
-  ["Round of 16", [93, 94, 95, 96]],
-  ["Round of 32", [82, 86, 87, 83, 80, 84, 85, 88]],
+  ["Round of 16", [91, 92, 95, 96]],
+  ["Round of 32", [76, 78, 79, 80, 86, 88, 85, 87]],
 ];
 
 function renderBracketSkeleton() {
