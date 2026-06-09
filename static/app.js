@@ -99,6 +99,7 @@ function wireTabs() {
       tab.classList.add("active");
       document.getElementById("tab-" + tab.dataset.tab).classList.add("active");
       if (tab.dataset.tab === "leagues" && currentUser) refreshLeagues();
+      if (tab.dataset.tab === "admin" && currentUser && currentUser.isAdmin) renderAdmin();
     });
   });
 }
@@ -147,6 +148,8 @@ function updateAuthUI() {
   if (loggedIn) document.getElementById("user-name").textContent = currentUser.displayName;
   document.getElementById("leagues-gate").classList.toggle("hidden", loggedIn);
   document.getElementById("leagues-main").classList.toggle("hidden", !loggedIn);
+  const admin = loggedIn && currentUser.isAdmin;
+  document.querySelectorAll(".admin-only").forEach(el => el.classList.toggle("hidden", !admin));
 }
 
 function openAuth(which) {
@@ -357,6 +360,111 @@ async function deleteLeague(code) {
   const { ok, data } = await api("DELETE", "/api/leagues/" + encodeURIComponent(code));
   if (!ok) { alert(data.error || "Could not delete."); return; }
   showLeaguesHome();
+}
+
+// ================================================================ admin panel
+async function renderAdmin() {
+  await Promise.all([renderAdminLeagues(), renderAdminUsers()]);
+  document.getElementById("admin-members").classList.add("hidden");
+  const close = document.getElementById("admin-members-close");
+  close.onclick = () => document.getElementById("admin-members").classList.add("hidden");
+}
+
+async function renderAdminLeagues() {
+  const { ok, data } = await api("GET", "/api/admin/leagues");
+  const t = document.getElementById("admin-leagues");
+  if (!ok) { t.innerHTML = ""; return; }
+  let html = `<tr><th>Name</th><th>Code</th><th>Owner</th><th>Members</th><th>Actions</th></tr>`;
+  data.forEach(l => {
+    html += `<tr>
+      <td>${escapeHTML(l.name)}</td>
+      <td><span class="code-inline">${l.code}</span></td>
+      <td>${escapeHTML(l.owner_name)}</td>
+      <td>${l.members}</td>
+      <td class="actions">
+        <button class="btn ghost small" data-act="members" data-code="${l.code}" data-name="${escapeHTML(l.name)}">Members</button>
+        <button class="btn ghost small" data-act="rename" data-code="${l.code}" data-name="${escapeHTML(l.name)}">Rename</button>
+        <button class="btn ghost small danger" data-act="del" data-code="${l.code}">Delete</button>
+      </td></tr>`;
+  });
+  t.innerHTML = html;
+  t.querySelectorAll("button[data-act]").forEach(b => b.addEventListener("click", () => {
+    const code = b.dataset.code;
+    if (b.dataset.act === "del") adminDeleteLeague(code);
+    else if (b.dataset.act === "rename") adminRenameLeague(code, b.dataset.name);
+    else if (b.dataset.act === "members") adminViewMembers(code, b.dataset.name);
+  }));
+}
+
+async function adminRenameLeague(code, current) {
+  const name = prompt("Rename league:", current);
+  if (name === null) return;
+  const { ok, data } = await api("PATCH", "/api/admin/leagues/" + encodeURIComponent(code), { name: name.trim() });
+  if (!ok) { alert(data.error || "Rename failed."); return; }
+  renderAdminLeagues();
+}
+async function adminDeleteLeague(code) {
+  if (!confirm(`Delete league ${code} for everyone?`)) return;
+  const { ok, data } = await api("DELETE", "/api/admin/leagues/" + encodeURIComponent(code));
+  if (!ok) { alert(data.error || "Delete failed."); return; }
+  renderAdminLeagues();
+}
+
+async function adminViewMembers(code, name) {
+  const { ok, data } = await api("GET", "/api/admin/leagues/" + encodeURIComponent(code));
+  if (!ok) { alert(data.error || "Could not load members."); return; }
+  document.getElementById("admin-members").classList.remove("hidden");
+  document.getElementById("admin-members-title").textContent = `Members of ${name} (${code})`;
+  const list = document.getElementById("admin-members-list");
+  if (!data.members.length) { list.innerHTML = `<div class="hint">No members.</div>`; return; }
+  list.innerHTML = data.members.map(m =>
+    `<div class="admin-member-row">
+       <span>${escapeHTML(m.displayName)}${m.summary ? ` — champion: ${m.summary.champion || "—"}, ${m.summary.predicted || 0}/72` : " — no prediction"}</span>
+       <button class="btn ghost small danger" data-uid="${m.userId}">Remove</button>
+     </div>`).join("");
+  list.querySelectorAll("button[data-uid]").forEach(b => b.addEventListener("click", async () => {
+    if (!confirm("Remove this member from the league?")) return;
+    const r = await api("POST", `/api/admin/leagues/${encodeURIComponent(code)}/remove-member`, { userId: +b.dataset.uid });
+    if (!r.ok) { alert(r.data.error || "Failed."); return; }
+    adminViewMembers(code, name);
+    renderAdminLeagues();
+  }));
+}
+
+async function renderAdminUsers() {
+  const { ok, data } = await api("GET", "/api/admin/users");
+  const t = document.getElementById("admin-users");
+  if (!ok) { t.innerHTML = ""; return; }
+  let html = `<tr><th>Name</th><th>Email</th><th>Verified</th><th>Leagues</th><th>Prediction</th><th>Actions</th></tr>`;
+  data.forEach(u => {
+    html += `<tr>
+      <td>${escapeHTML(u.display_name)}</td>
+      <td>${escapeHTML(u.email)}</td>
+      <td>${u.verified ? "✅" : "❌"}</td>
+      <td>${u.leagues}</td>
+      <td>${u.has_pred ? "yes" : "—"}</td>
+      <td class="actions">
+        ${u.verified ? "" : `<button class="btn ghost small" data-act="verify" data-id="${u.id}">Verify</button>`}
+        <button class="btn ghost small danger" data-act="del" data-id="${u.id}" data-name="${escapeHTML(u.display_name)}">Delete</button>
+      </td></tr>`;
+  });
+  t.innerHTML = html;
+  t.querySelectorAll("button[data-act]").forEach(b => b.addEventListener("click", () => {
+    if (b.dataset.act === "verify") adminVerifyUser(b.dataset.id);
+    else adminDeleteUser(b.dataset.id, b.dataset.name);
+  }));
+}
+async function adminVerifyUser(id) {
+  const { ok, data } = await api("POST", `/api/admin/users/${id}/verify`);
+  if (!ok) { alert(data.error || "Failed."); return; }
+  renderAdminUsers();
+}
+async function adminDeleteUser(id, name) {
+  if (!confirm(`Delete user "${name}"? This removes their account, prediction, and any leagues they own.`)) return;
+  const { ok, data } = await api("DELETE", `/api/admin/users/${id}`);
+  if (!ok) { alert(data.error || "Failed."); return; }
+  renderAdminUsers();
+  renderAdminLeagues();
 }
 
 // ================================================================ group stage

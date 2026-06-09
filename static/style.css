@@ -343,3 +343,20 @@ table { width: 100%; border-collapse: collapse; font-size: 13px; }
 #league-board td { padding: 9px 10px; border-top: 1px solid var(--line); font-size: 14px; }
 #league-board tr.me td { background: rgba(52,211,153,.10); }
 #league-board tr.me td:first-child { font-weight: 700; }
+
+/* ===================== Admin panel ===================== */
+.admin-h { margin: 24px 0 8px; font-size: 15px; color: var(--accent2); }
+.admin-table { width: 100%; border-collapse: collapse; }
+.admin-table th { text-align: left; color: var(--muted); font-size: 12px; padding: 8px 10px; }
+.admin-table td { padding: 8px 10px; border-top: 1px solid var(--line); font-size: 13px; vertical-align: middle; }
+.admin-table td.actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.admin-members {
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+  padding: 12px 14px; margin: 12px 0;
+}
+.admin-members-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.admin-member-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 0; border-top: 1px solid var(--line); font-size: 13px;
+}
+.admin-member-row:first-child { border-top: none; }

@@ -53,6 +53,9 @@ app.config.update(
 db.init_db()
 _FIXTURE_IDS = [f["id"] for f in build_group_fixtures()]
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_ADMIN_EMAILS = {
+    e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()
+}
 _CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no ambiguous chars (0/O/1/I)
 
 
@@ -83,11 +86,16 @@ def current_user():
     return db.get_user_by_id(uid) if uid else None
 
 
+def is_admin(u):
+    return bool(u) and u["email"].lower() in _ADMIN_EMAILS
+
+
 def public_user(u):
     if not u:
         return None
     return {"id": u["id"], "email": u["email"],
-            "displayName": u["display_name"], "verified": bool(u["verified"])}
+            "displayName": u["display_name"], "verified": bool(u["verified"]),
+            "isAdmin": is_admin(u)}
 
 
 def login_required(fn):
@@ -96,6 +104,18 @@ def login_required(fn):
         u = current_user()
         if not u:
             return jsonify({"error": "Please log in."}), 401
+        return fn(u, *args, **kwargs)
+    return wrapper
+
+
+def admin_required(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        u = current_user()
+        if not u:
+            return jsonify({"error": "Please log in."}), 401
+        if not is_admin(u):
+            return jsonify({"error": "Admin access required."}), 403
         return fn(u, *args, **kwargs)
     return wrapper
 
@@ -371,6 +391,83 @@ def api_delete_league(user, code):
     if lg["owner_id"] != user["id"]:
         return jsonify({"error": "Only the owner can delete this league."}), 403
     db.delete_league(lg["id"])
+    return jsonify({"ok": True})
+
+
+# --------------------------------------------------------------- admin
+@app.route("/api/admin/leagues", methods=["GET"])
+@admin_required
+def api_admin_leagues(user):
+    return jsonify(db.list_all_leagues())
+
+
+@app.route("/api/admin/leagues/<code>", methods=["GET"])
+@admin_required
+def api_admin_league_detail(user, code):
+    lg = db.get_league_by_code(code)
+    if not lg:
+        return jsonify({"error": "Not found."}), 404
+    return jsonify({"code": lg["code"], "name": lg["name"],
+                    "members": db.league_members(lg["id"])})
+
+
+@app.route("/api/admin/leagues/<code>", methods=["PATCH"])
+@admin_required
+def api_admin_rename_league(user, code):
+    lg = db.get_league_by_code(code)
+    if not lg:
+        return jsonify({"error": "Not found."}), 404
+    name = ((request.get_json(force=True, silent=True) or {}).get("name") or "").strip()
+    if not (1 <= len(name) <= 50):
+        return jsonify({"error": "Name must be 1–50 characters."}), 400
+    db.update_league_name(lg["code"], name)
+    return jsonify({"ok": True, "name": name})
+
+
+@app.route("/api/admin/leagues/<code>", methods=["DELETE"])
+@admin_required
+def api_admin_delete_league(user, code):
+    lg = db.get_league_by_code(code)
+    if not lg:
+        return jsonify({"error": "Not found."}), 404
+    db.delete_league(lg["id"])
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/leagues/<code>/remove-member", methods=["POST"])
+@admin_required
+def api_admin_remove_member(user, code):
+    lg = db.get_league_by_code(code)
+    if not lg:
+        return jsonify({"error": "Not found."}), 404
+    uid = (request.get_json(force=True, silent=True) or {}).get("userId")
+    if not uid:
+        return jsonify({"error": "userId required."}), 400
+    db.remove_member(lg["id"], uid)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/users", methods=["GET"])
+@admin_required
+def api_admin_users(user):
+    return jsonify(db.list_all_users())
+
+
+@app.route("/api/admin/users/<int:uid>/verify", methods=["POST"])
+@admin_required
+def api_admin_verify_user(user, uid):
+    if not db.get_user_by_id(uid):
+        return jsonify({"error": "Not found."}), 404
+    db.set_verified(uid)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/admin/users/<int:uid>", methods=["DELETE"])
+@admin_required
+def api_admin_delete_user(user, uid):
+    if not db.get_user_by_id(uid):
+        return jsonify({"error": "Not found."}), 404
+    db.delete_user(uid)
     return jsonify({"ok": True})
 
 

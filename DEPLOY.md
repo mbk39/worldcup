@@ -169,6 +169,21 @@ exception):
 Prefer an HTTPS email API (SendGrid/Brevo/Mailgun, all on the free allow-list)?
 Tell me and I'll swap the sender to use it instead of SMTP.
 
+### Making yourself the admin
+
+One or more accounts can be admins (full backend: view/rename/delete any league,
+remove members, verify/delete users). Admins are set by env var — nobody can
+self-promote.
+
+1. Decide which email you'll sign up with (your "master account").
+2. In your PythonAnywhere **WSGI file**, above `from wsgi import application`, add:
+   ```python
+   import os
+   os.environ["ADMIN_EMAILS"] = "you@example.com"   # comma-separate for several
+   ```
+3. **Reload**, then sign up / log in with that email. An **⚙️ Admin** tab appears
+   for you only, and the admin API rejects everyone else (403).
+
 ## Notes
 - The database file is created automatically on first run. An existing
   `predictions.json` from the old version is auto-imported once, then renamed to

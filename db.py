@@ -199,6 +199,45 @@ def list_user_leagues(user_id):
     return [dict(r) for r in rows]
 
 
+def update_league_name(code, name):
+    with _lock, _conn() as conn:
+        conn.execute("UPDATE leagues SET name=? WHERE code=?", (name, code.upper()))
+
+
+# --------------------------------------------------------------- admin
+def list_all_leagues():
+    with _conn() as conn:
+        rows = conn.execute(
+            """SELECT l.id, l.code, l.name, l.created, l.owner_id,
+                      u.display_name AS owner_name,
+                      (SELECT COUNT(*) FROM league_members m WHERE m.league_id=l.id) AS members
+               FROM leagues l JOIN users u ON u.id = l.owner_id
+               ORDER BY l.created DESC"""
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def list_all_users():
+    with _conn() as conn:
+        rows = conn.execute(
+            """SELECT u.id, u.email, u.display_name, u.verified, u.created,
+                      (SELECT COUNT(*) FROM league_members m WHERE m.user_id=u.id) AS leagues,
+                      (SELECT COUNT(*) FROM predictions p WHERE p.user_id=u.id) AS has_pred
+               FROM users u ORDER BY u.created DESC"""
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def set_verified(user_id):
+    with _lock, _conn() as conn:
+        conn.execute("UPDATE users SET verified=1, verify_token=NULL WHERE id=?", (user_id,))
+
+
+def delete_user(user_id):
+    with _lock, _conn() as conn:
+        conn.execute("DELETE FROM users WHERE id=?", (user_id,))
+
+
 def league_members(league_id):
     """Members of a league with their prediction summary (no email leaked)."""
     with _conn() as conn:
