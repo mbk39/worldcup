@@ -741,11 +741,10 @@ async function openLeague(code) {
 function renderSponsors(sponsors) {
   const el = document.getElementById("league-sponsors");
   if (!sponsors || !sponsors.length) { el.innerHTML = ""; return; }
-  el.innerHTML = `<div class="sponsors-label">Sponsored by</div><div class="sponsors-logos">` +
-    sponsors.map(s => {
-      const img = `<img src="${s.img}" alt="${escapeHTML(s.name || "")}" title="${escapeHTML(s.name || "")}" onerror="this.style.display='none'">`;
-      return s.link ? `<a href="${s.link}" target="_blank" rel="noopener">${img}</a>` : img;
-    }).join("") + `</div>`;
+  el.innerHTML = sponsors.map(s => {
+    const img = `<img src="${s.img}" alt="${escapeHTML(s.name || "")}" title="${escapeHTML(s.name || "")}" onerror="this.style.display='none'">`;
+    return s.link ? `<a href="${s.link}" target="_blank" rel="noopener">${img}</a>` : img;
+  }).join("");
 }
 
 function openLeagueEdit(data) {
