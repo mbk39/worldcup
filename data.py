@@ -68,22 +68,42 @@ _MATCHDAY_PAIRS = [
 def build_group_fixtures():
     """Return list of group-stage matches.
 
-    Each: {id, stage, group, matchday, home, away}. id like 'G-A-1'.
+    Each: {id, stage, group, matchday, home, away, date, time, channel}.
+    id like 'G-A-1' (stable — used as the key for saved predictions, so the
+    generation order must not change). date/time(BST)/channel come from
+    schedule.py; matchday is derived from the real kickoff dates.
     """
+    import schedule  # local module; standalone data, no circular import
+
     fixtures = []
     for letter, teams in GROUPS.items():
         n = 0
-        for md_index, pairs in enumerate(_MATCHDAY_PAIRS, start=1):
+        group_fx = []
+        for pairs in _MATCHDAY_PAIRS:
             for (i, j) in pairs:
                 n += 1
-                fixtures.append({
+                home, away = teams[i], teams[j]
+                sched = schedule.for_match(home, away) or {}
+                group_fx.append({
                     "id": f"G-{letter}-{n}",
                     "stage": "group",
                     "group": letter,
-                    "matchday": md_index,
-                    "home": teams[i],
-                    "away": teams[j],
+                    "home": home,
+                    "away": away,
+                    "date": sched.get("date"),
+                    "time": sched.get("time"),
+                    "channel": sched.get("channel"),
                 })
+
+        # A 4-team group has 3 matchdays of 2 matches. The schedule always
+        # finishes a full matchday before the next starts, so sorting by
+        # kick-off and pairing off gives the correct matchday (robust to late
+        # kick-offs that roll past UK midnight).
+        group_fx.sort(key=lambda fx: (fx["date"] or "", fx["time"] or ""))
+        for idx, fx in enumerate(group_fx):
+            fx["matchday"] = idx // 2 + 1
+
+        fixtures.extend(group_fx)
     return fixtures
 
 

@@ -18,6 +18,20 @@ function teamHTML(team) {
     : `<span class="flag">${(DATA.flags && DATA.flags[team]) || "⚽"}</span>`;
   return `${img}<span class="tname">${team}</span>`;
 }
+const _DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const _MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function fmtDate(iso) {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  return `${_DOW[dow]} ${d} ${_MON[m - 1]}`;
+}
+function chanClass(ch) {
+  if (!ch) return "";
+  if (ch.startsWith("BBC")) return "bbc";
+  if (ch.startsWith("ITV")) return "itv";
+  return "";
+}
+
 function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 function loadState() {
   try {
@@ -101,6 +115,14 @@ function renderGroups() {
         fxWrap.appendChild(lbl);
       }
       const sc = state.groupScores[fx.id] || {};
+      if (fx.date) {
+        const meta = document.createElement("div");
+        meta.className = "fixture-meta";
+        meta.innerHTML =
+          `<span class="when">${fmtDate(fx.date)} · ${fx.time} BST</span>` +
+          `<span class="chan ${chanClass(fx.channel)}">${fx.channel}</span>`;
+        fxWrap.appendChild(meta);
+      }
       const row = document.createElement("div");
       row.className = "fixture";
       row.innerHTML = `
