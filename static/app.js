@@ -244,14 +244,42 @@ function renderSchedule() {
 
 function renderProgress() {
   const total = DATA.fixtures.length;
-  let done = 0;
-  DATA.fixtures.forEach(f => {
-    const s = state.groupScores[f.id];
-    if (s && s.home != null && s.away != null) done++;
+  const remaining = DATA.fixtures.filter(f => {
+    const s = state.groupScores[f.id] || {};
+    return s.home == null || s.away == null;
   });
+  const done = total - remaining.length;
+
   document.getElementById("progress-fill").style.width = (100 * done / total) + "%";
   document.getElementById("progress-text").textContent =
-    `${done} / ${total} group matches predicted`;
+    done === total ? `All ${total} group matches predicted ✓`
+                   : `${done} / ${total} group matches predicted`;
+
+  // When close to done, list the remaining matches as clickable chips.
+  const miss = document.getElementById("progress-missing");
+  if (remaining.length && remaining.length <= 8) {
+    miss.innerHTML =
+      `<span class="ml">${remaining.length} left:</span>` +
+      remaining.map(f =>
+        `<button class="miss-chip" data-fid="${f.id}">${f.home} v ${f.away}</button>`
+      ).join("");
+    miss.classList.remove("hidden");
+    miss.querySelectorAll(".miss-chip").forEach(b =>
+      b.addEventListener("click", () => jumpToFixture(b.dataset.fid)));
+  } else {
+    miss.innerHTML = "";
+    miss.classList.add("hidden");
+  }
+}
+
+function jumpToFixture(fid) {
+  document.querySelector('.tab[data-tab="groups"]').click();
+  const inp = document.querySelector(`#groups-grid input[data-mid="${fid}"]`);
+  if (!inp) return;
+  const row = inp.closest(".fixture");
+  row.scrollIntoView({ behavior: "smooth", block: "center" });
+  const empty = [...row.querySelectorAll("input")].find(i => i.value.trim() === "");
+  (empty || inp).focus();
 }
 
 function renderStandings(res) {
