@@ -578,3 +578,46 @@ table { width: 100%; border-collapse: collapse; font-size: 13px; }
 [data-theme="light"] .pred-card .pbar,
 [data-theme="light"] .progress { background: #eceff6; }
 [data-theme="light"] .champion { color: #3a2400; }
+
+/* ===================== Control-room polish ===================== */
+.muted { color: var(--muted); }
+
+/* team name + 3-letter code */
+.tcol { display: inline-flex; flex-direction: column; vertical-align: middle; line-height: 1.12; }
+.tcode { font-size: 9px; color: var(--muted); letter-spacing: .6px; font-weight: 700; }
+
+/* stat dashboard */
+.stat-row { display: grid; grid-template-columns: repeat(4, 1fr) 1.4fr; gap: 12px; margin-bottom: 16px; }
+.stat {
+  background: linear-gradient(180deg, var(--card2), var(--card));
+  border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 12px 14px; box-shadow: var(--shadow-sm);
+}
+.stat-k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 5px; }
+.stat-v { font-size: 20px; font-weight: 800; letter-spacing: -.3px; }
+.stat-v.wild { font-size: 16px; letter-spacing: 3px; font-weight: 700; color: var(--text); }
+.champ-stat { background: linear-gradient(180deg, rgba(251,191,36,.16), var(--card)); border-color: rgba(251,191,36,.4); }
+.champ-stat .stat-v { font-size: 16px; }
+@media (max-width: 800px) { .stat-row { grid-template-columns: repeat(2, 1fr); } }
+
+.fill-row { display: flex; justify-content: flex-end; margin-bottom: 10px; }
+
+/* third-place race cards */
+.third-cards {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px; margin: 8px 0 18px;
+}
+.tp-card {
+  border: 1px solid var(--line); border-radius: 12px; padding: 11px 12px;
+  background: linear-gradient(180deg, var(--card2), var(--card));
+}
+.tp-card.safe { border-color: rgba(31,157,99,.5); box-shadow: inset 3px 0 0 var(--win); }
+.tp-card.bubble { border-color: rgba(251,191,36,.55); box-shadow: inset 3px 0 0 var(--gold); }
+.tp-card.out { opacity: .65; }
+.tp-top { font-size: 10.5px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 8px; }
+.tp-team { font-size: 14px; font-weight: 600; }
+.tp-stat { font-size: 11px; color: var(--muted); margin-top: 6px; }
+
+.badge-r32 { background: var(--gold); color: #2a1c00; font-weight: 800; font-size: 11px; padding: 2px 9px; border-radius: 6px; }
+.badge-out { background: var(--bg2); color: var(--muted); font-weight: 700; font-size: 11px; padding: 2px 9px; border-radius: 6px; }
+#third-table td.team { text-align: left; }

@@ -16,6 +16,7 @@
     <div class="header-actions">
       <div id="champion-banner" class="champion hidden"></div>
       <button id="theme-toggle" class="btn ghost icon-btn" title="Toggle light / dark">🌙</button>
+      <button id="randomfill-btn" class="btn ghost">🎲 Random fill</button>
       <button id="save-btn" class="btn primary">Save prediction</button>
       <!-- logged out -->
       <button id="login-btn" class="btn">Log in / Sign up</button>
@@ -38,6 +39,7 @@
 
   <main>
     <section id="tab-predictor" class="tab-panel active">
+      <div id="stat-row" class="stat-row"></div>
       <div id="predictor-lock" class="lockbar hidden"></div>
       <div class="subtoggle">
         <button class="subtab active" data-sub="groups">Group Stage</button>
@@ -47,10 +49,12 @@
       <div id="sub-groups" class="sub-panel active">
         <div id="progress-bar" class="progress"><div id="progress-fill"></div><span id="progress-text"></span></div>
         <div id="progress-missing" class="progress-missing hidden"></div>
+        <div class="fill-row"><button id="randomscores-btn" class="btn ghost small">🎲 Random fill scores</button></div>
         <div id="groups-grid" class="groups-grid"></div>
         <div id="third-place" class="third-place hidden">
-          <h2>Best third-placed teams</h2>
-          <p class="hint">Top 8 advance to the Round of 32 (shaded).</p>
+          <h2>Best third-place race</h2>
+          <p class="hint">Top 8 qualify for the Round of 32. Ranks 7–8 are on the bubble.</p>
+          <div id="third-cards" class="third-cards"></div>
           <table id="third-table"></table>
         </div>
       </div>

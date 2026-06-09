@@ -52,7 +52,9 @@ function teamHTML(team) {
       `srcset="https://flagcdn.com/w80/${code}.png 2x" alt="" loading="lazy" ` +
       `onerror="this.style.display='none'">`
     : `<span class="flag">${(DATA.flags && DATA.flags[team]) || "⚽"}</span>`;
-  return `${img}<span class="tname">${team}</span>`;
+  const c3 = (DATA.codes3 && DATA.codes3[team]) || "";
+  return `${img}<span class="tcol"><span class="tname">${team}</span>` +
+         (c3 ? `<span class="tcode">${c3}</span>` : "") + `</span>`;
 }
 
 const _DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -423,6 +425,32 @@ function wireHeader() {
   document.getElementById("save-btn").addEventListener("click", savePrediction);
   document.getElementById("login-btn").addEventListener("click", () => openAuth("login"));
   document.getElementById("logout-btn").addEventListener("click", logout);
+  document.getElementById("randomfill-btn").addEventListener("click", () => randomFill(true));
+  document.getElementById("randomscores-btn").addEventListener("click", () => randomFill(false));
+}
+
+const _rnd = n => Math.floor(Math.random() * n);
+
+async function randomFill(includeBracket) {
+  if (LOCKS.tournamentLocked) { alert("Predictions are locked — the tournament has started."); return; }
+  DATA.fixtures.forEach(f => {
+    state.groupScores[f.id] = { home: _rnd(4), away: _rnd(4) };
+  });
+  if (includeBracket) {
+    state.koPicks = {};
+    saveState();
+    for (let pass = 0; pass < 6; pass++) {
+      const res = (await api("POST", "/api/simulate", state)).data;
+      for (const [mid, m] of Object.entries(res.bracket)) {
+        if (m.teamA && m.teamB && !(mid in state.koPicks)) {
+          state.koPicks[mid] = Math.random() < 0.5 ? m.teamA : m.teamB;
+        }
+      }
+    }
+  }
+  saveState();
+  renderGroups();
+  await simulate();
 }
 
 function resetAll() {
@@ -1083,6 +1111,28 @@ async function simulate() {
   renderBracket(res);
   renderChampion(res);
   renderProgress();
+  renderStatRow(res);
+}
+
+function renderStatRow(res) {
+  const el = document.getElementById("stat-row");
+  if (!el) return;
+  const total = DATA.fixtures.length;
+  const done = DATA.fixtures.filter(f => {
+    const s = state.groupScores[f.id] || {}; return s.home != null && s.away != null;
+  }).length;
+  const groupsComplete = Object.values(res.standings || {}).filter(d => d.complete).length;
+  const koPicks = Object.keys(state.koPicks || {}).length;
+  const wild = res.groupsComplete
+    ? res.thirdPlaceRanked.filter(t => t.qualified).map(t => t.group).sort().join(" ")
+    : "—";
+  const champ = res.champion ? teamHTML(res.champion) : `<span class="muted">—</span>`;
+  el.innerHTML =
+    `<div class="stat"><div class="stat-k">Group picks</div><div class="stat-v">${done} / ${total}</div></div>` +
+    `<div class="stat"><div class="stat-k">Groups complete</div><div class="stat-v">${groupsComplete} / 12</div></div>` +
+    `<div class="stat"><div class="stat-k">Bracket picks</div><div class="stat-v">${koPicks} / 31</div></div>` +
+    `<div class="stat"><div class="stat-k">Wildcard line</div><div class="stat-v wild">${wild}</div></div>` +
+    `<div class="stat champ-stat"><div class="stat-k">Champion</div><div class="stat-v">${champ}</div></div>`;
 }
 
 function renderProgress() {
@@ -1138,15 +1188,26 @@ function renderStandings(res) {
 
 function renderThirdPlace(res) {
   const wrap = document.getElementById("third-place");
+  const cards = document.getElementById("third-cards");
   const table = document.getElementById("third-table");
   if (!res.groupsComplete || !res.thirdPlaceRanked.length) { wrap.classList.add("hidden"); return; }
   wrap.classList.remove("hidden");
+
+  const status = i => (i < 6 ? "safe" : i < 8 ? "bubble" : "out");
+  const label = i => (i < 6 ? "Safe" : i < 8 ? "Bubble" : "Out");
+  cards.innerHTML = res.thirdPlaceRanked.map((t, i) => `
+    <div class="tp-card ${status(i)}">
+      <div class="tp-top">#${i + 1} · Group ${t.group} · ${label(i)}</div>
+      <div class="tp-team">${teamHTML(t.team)}</div>
+      <div class="tp-stat">${t.points} pts · ${t.gd > 0 ? "+" + t.gd : t.gd} GD · ${t.gf} GF</div>
+    </div>`).join("");
+
   let html = `<tr><th>Rank</th><th>Group</th><th>Team</th><th>Pts</th><th>GD</th><th>GF</th><th>Status</th></tr>`;
   res.thirdPlaceRanked.forEach((t, i) => {
     html += `<tr class="${t.qualified ? "q" : ""}">
-      <td>${i + 1}</td><td>${t.group}</td><td>${teamHTML(t.team)}</td>
+      <td>${i + 1}</td><td>${t.group}</td><td class="team">${teamHTML(t.team)}</td>
       <td>${t.points}</td><td>${t.gd > 0 ? "+" + t.gd : t.gd}</td><td>${t.gf}</td>
-      <td>${t.qualified ? "✅ Qualified" : "Eliminated"}</td></tr>`;
+      <td>${t.qualified ? '<span class="badge-r32">R32</span>' : '<span class="badge-out">Out</span>'}</td></tr>`;
   });
   table.innerHTML = html;
 }

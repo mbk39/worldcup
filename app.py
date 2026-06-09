@@ -41,7 +41,7 @@ import emailer
 import points as scoring
 import schedule
 from data import (
-    GROUPS, FLAGS, FLAG_CODES, build_group_fixtures,
+    GROUPS, FLAGS, FLAG_CODES, CODES3, build_group_fixtures,
     R32, R16, QF, SF, FINAL,
 )
 import engine
@@ -261,6 +261,7 @@ def api_data():
         "groups": GROUPS,
         "flags": FLAGS,
         "flagCodes": FLAG_CODES,
+        "codes3": CODES3,
         "fixtures": build_group_fixtures(),
         "bracket": _bracket_template(),
     })
