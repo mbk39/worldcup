@@ -537,16 +537,24 @@ table { width: 100%; border-collapse: collapse; font-size: 13px; }
 
 /* Side-by-side mirrored bracket: final in the centre */
 .bracket2 {
-  display: flex; gap: 8px; overflow-x: auto; align-items: stretch;
+  display: flex; gap: 5px; align-items: stretch;
   padding: 6px 0 20px;
 }
-.bk-col { display: flex; flex-direction: column; min-width: 152px; flex: 0 0 auto; }
+/* columns share the width so the whole bracket fits — no horizontal scroll */
+.bk-col { display: flex; flex-direction: column; flex: 1 1 0; min-width: 0; }
 .bk-col h4 {
-  text-align: center; color: var(--muted); font-size: 10.5px;
-  text-transform: uppercase; letter-spacing: .7px; margin: 0 0 12px; font-weight: 700;
+  text-align: center; color: var(--muted); font-size: 9.5px;
+  text-transform: uppercase; letter-spacing: .4px; margin: 0 0 12px; font-weight: 700;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .bk-matches { display: flex; flex-direction: column; justify-content: space-around; flex: 1; gap: 8px; }
-.bk-finalcol { min-width: 184px; }
+.bk-finalcol { flex: 1.15 1 0; }
+/* compact match cards so narrow columns stay readable */
+.bracket2 .ko-team { padding: 6px 7px; font-size: 12px; gap: 5px; min-width: 0; }
+.bracket2 .ko-team .tcol { min-width: 0; overflow: hidden; }
+.bracket2 .ko-team .tname { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bracket2 .ko-team .flag-img { flex: 0 0 auto; }
+.bracket2 .ko-match .mid { font-size: 9px; padding: 2px 7px; }
 .bk-finalcol .bk-matches { justify-content: center; }
 .bk-finalcol h4 { color: var(--gold); }
 .bk-finalcol .ko-match { box-shadow: 0 0 0 1px rgba(251,191,36,.35), var(--shadow); }
