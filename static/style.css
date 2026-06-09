@@ -541,13 +541,13 @@ table { width: 100%; border-collapse: collapse; font-size: 13px; }
   padding: 6px 0 20px;
 }
 /* columns share the width so the whole bracket fits — no horizontal scroll */
-.bk-col { display: flex; flex-direction: column; flex: 1 1 0; min-width: 0; }
+.bk-col { display: flex; flex-direction: column; justify-content: center; flex: 1 1 0; min-width: 0; }
 .bk-col h4 {
   text-align: center; color: var(--muted); font-size: 9.5px;
-  text-transform: uppercase; letter-spacing: .4px; margin: 0 0 12px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .4px; margin: 0 0 8px; font-weight: 700;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.bk-matches { display: flex; flex-direction: column; justify-content: space-around; flex: 1; gap: 8px; }
+.bk-matches { display: flex; flex-direction: column; justify-content: center; flex: 0 1 auto; gap: 10px; }
 .bk-finalcol { flex: 1.15 1 0; }
 /* compact match cards so narrow columns stay readable */
 .bracket2 .ko-team { padding: 6px 7px; font-size: 12px; gap: 5px; min-width: 0; }
