@@ -174,14 +174,20 @@ header {
 
 main { padding: 22px 28px 70px; max-width: 1400px; margin: 0 auto; }
 
-/* Wide screens: gently compact the fixtures so the denser 4 × 3 group grid
-   (defined just after .groups-grid below) stays readable. The TV channel now
-   lives on the meta line, so the row gives its full width to the team names. */
+/* Wide screens: dense 4 × 3 group grid (defined just after .groups-grid below).
+   In these narrow cards the score sits *under* the two names, so each team name
+   gets the full card width and never truncates. */
 @media (min-width: 1300px) {
-  .groups-grid .fixture { gap: 6px; }
-  .groups-grid .fixture .score { gap: 3px; }
-  .groups-grid .fixture input { width: 32px; padding: 6px 0; }
-  .groups-grid .fixture .flag-img { width: 20px; height: 15px; margin-right: 5px; }
+  .groups-grid .fixture {
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas: "home away" "score score";
+    align-items: center; row-gap: 1px; column-gap: 10px; padding: 3px 6px;
+  }
+  .groups-grid .fixture .home { grid-area: home; text-align: left; }
+  .groups-grid .fixture .away { grid-area: away; text-align: right; }
+  .groups-grid .fixture .score { grid-area: score; justify-content: center; gap: 4px; }
+  .groups-grid .fixture input { width: 34px; padding: 6px 0; }
+  .groups-grid .fixture .flag-img { width: 20px; height: 15px; }
 }
 .section-h { margin: 26px 0 10px; font-size: 16px; font-weight: 700; }
 .tab-panel { display: none; }
