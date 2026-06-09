@@ -136,7 +136,10 @@
         <div id="league-detail" class="hidden">
           <button id="league-back" class="btn ghost">← Back to my leagues</button>
           <div class="league-detail-head">
-            <h2 id="league-detail-name"></h2>
+            <div class="league-title">
+              <img id="league-logo" class="league-logo hidden" alt="">
+              <h2 id="league-detail-name"></h2>
+            </div>
             <div class="code-share">
               <span class="code-label">Join code</span>
               <span id="league-detail-code" class="code-pill"></span>
@@ -145,6 +148,20 @@
             </div>
           </div>
           <div id="league-detail-actions" class="league-detail-actions"></div>
+
+          <div id="league-edit" class="league-edit hidden">
+            <h3>Customise league</h3>
+            <label>League name<input id="edit-name" class="name-input" type="text" maxlength="50"></label>
+            <label>Logo image URL<input id="edit-logo" class="name-input" type="url" placeholder="https://…/logo.png"></label>
+            <label>Sponsors — one per line as <code>image URL | website (optional) | name (optional)</code>
+              <textarea id="edit-sponsors" rows="4" placeholder="https://…/sponsor.png | https://sponsor.com | Acme Co"></textarea>
+            </label>
+            <div class="edit-actions">
+              <button id="edit-save" class="btn primary small">Save branding</button>
+              <button id="edit-cancel" class="btn ghost small">Cancel</button>
+            </div>
+          </div>
+
           <div class="subtoggle" id="league-tracks">
             <button class="subtab active" data-track="tournament">Pre-tournament</button>
             <button class="subtab" data-track="group">Rolling</button>
@@ -153,6 +170,7 @@
           <div id="league-note" class="hint"></div>
           <p class="hint" id="league-board-hint">Tap a player to see their predictions (revealed only once matches lock).</p>
           <table id="league-board"></table>
+          <div id="league-sponsors" class="sponsors-strip"></div>
           <div id="league-member" class="admin-members hidden">
             <div class="admin-members-head">
               <b id="league-member-title"></b>

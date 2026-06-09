@@ -649,6 +649,9 @@ function wireLeagues() {
   });
   document.getElementById("league-member-close").addEventListener("click", () =>
     document.getElementById("league-member").classList.add("hidden"));
+  document.getElementById("edit-save").addEventListener("click", saveLeagueEdit);
+  document.getElementById("edit-cancel").addEventListener("click", () =>
+    document.getElementById("league-edit").classList.add("hidden"));
   document.getElementById("join-code").addEventListener("keydown",
     e => { if (e.key === "Enter") joinLeague(); });
   document.getElementById("league-name").addEventListener("keydown",
@@ -667,7 +670,7 @@ async function refreshLeagues() {
     const card = document.createElement("div");
     card.className = "pred-card";
     card.innerHTML = `
-      <div class="pname">${escapeHTML(lg.name)}</div>
+      <div class="pname">${lg.logo ? `<img class="card-logo" src="${lg.logo}" onerror="this.style.display='none'">` : ""}${escapeHTML(lg.name)}</div>
       <div class="line">Code: <b class="code-inline">${lg.code}</b></div>
       <div class="line">${lg.members} member${lg.members === 1 ? "" : "s"}${lg.isOwner ? " · you own this" : ""}</div>`;
     card.addEventListener("click", () => openLeague(lg.code));
@@ -711,19 +714,62 @@ async function openLeague(code) {
   document.getElementById("league-detail-name").textContent = data.name;
   document.getElementById("league-detail-code").textContent = data.code;
 
+  const logo = document.getElementById("league-logo");
+  if (data.logo) { logo.src = data.logo; logo.classList.remove("hidden"); logo.onerror = () => logo.classList.add("hidden"); }
+  else logo.classList.add("hidden");
+  renderSponsors(data.sponsors || []);
+  document.getElementById("league-edit").classList.add("hidden");
+
   const actions = document.getElementById("league-detail-actions");
   actions.innerHTML = data.isOwner
-    ? `<button class="btn ghost small danger" id="del-league">Delete league</button>`
+    ? `<button class="btn ghost small" id="edit-league">🎨 Customise</button>
+       <button class="btn ghost small danger" id="del-league">Delete league</button>`
     : `<button class="btn ghost small" id="leave-league">Leave league</button>`;
   const del = document.getElementById("del-league");
   if (del) del.addEventListener("click", () => deleteLeague(data.code));
   const leave = document.getElementById("leave-league");
   if (leave) leave.addEventListener("click", () => leaveLeague(data.code));
+  const edit = document.getElementById("edit-league");
+  if (edit) edit.addEventListener("click", () => openLeagueEdit(data));
 
   LEAGUE_DATA = data;
   document.querySelectorAll("#league-tracks .subtab").forEach(b =>
     b.onclick = () => { LEAGUE_TRACK = b.dataset.track; renderLeagueBoard(); });
   renderLeagueBoard();
+}
+
+function renderSponsors(sponsors) {
+  const el = document.getElementById("league-sponsors");
+  if (!sponsors || !sponsors.length) { el.innerHTML = ""; return; }
+  el.innerHTML = `<div class="sponsors-label">Sponsored by</div><div class="sponsors-logos">` +
+    sponsors.map(s => {
+      const img = `<img src="${s.img}" alt="${escapeHTML(s.name || "")}" title="${escapeHTML(s.name || "")}" onerror="this.style.display='none'">`;
+      return s.link ? `<a href="${s.link}" target="_blank" rel="noopener">${img}</a>` : img;
+    }).join("") + `</div>`;
+}
+
+function openLeagueEdit(data) {
+  document.getElementById("edit-name").value = data.name || "";
+  document.getElementById("edit-logo").value = data.logo || "";
+  document.getElementById("edit-sponsors").value =
+    (data.sponsors || []).map(s => [s.img, s.link, s.name].filter(Boolean).join(" | ")).join("\n");
+  document.getElementById("league-edit").classList.remove("hidden");
+}
+
+async function saveLeagueEdit() {
+  const code = LEAGUE_DATA.code;
+  const sponsors = document.getElementById("edit-sponsors").value.split("\n")
+    .map(line => line.split("|").map(s => s.trim()))
+    .filter(parts => parts[0])
+    .map(parts => ({ img: parts[0], link: parts[1] || "", name: parts[2] || "" }));
+  const body = {
+    name: document.getElementById("edit-name").value.trim(),
+    logo: document.getElementById("edit-logo").value.trim(),
+    sponsors,
+  };
+  const { ok, data } = await api("POST", `/api/leagues/${encodeURIComponent(code)}/edit`, body);
+  if (!ok) { alert(data.error || "Could not save."); return; }
+  openLeague(code);
 }
 
 const TRACK_LABEL = { tournament: "Pre-tournament bracket", group: "Rolling group picks", knockout: "Knockout picks" };

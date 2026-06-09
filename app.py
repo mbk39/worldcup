@@ -25,6 +25,7 @@ Leagues (login required):
 """
 
 import datetime
+import json
 import os
 import re
 import secrets
@@ -536,7 +537,7 @@ def _league_public(lg, user_id):
 def api_list_leagues(user):
     out = []
     for lg in db.list_user_leagues(user["id"]):
-        out.append({"code": lg["code"], "name": lg["name"],
+        out.append({"code": lg["code"], "name": lg["name"], "logo": lg.get("logo") or "",
                     "members": lg["members"], "isOwner": lg["owner_id"] == user["id"]})
     return jsonify(out)
 
@@ -591,10 +592,39 @@ def api_league_detail(user, code):
     return jsonify({
         "code": lg["code"], "name": lg["name"],
         "isOwner": lg["owner_id"] == user["id"],
+        "logo": lg["logo"] or "",
+        "sponsors": json.loads(lg["sponsors"] or "[]"),
         "members": members,
         "resultsScored": group_done,
         "knockoutReady": group_done >= len(_FIXTURE_IDS),
     })
+
+
+def _clean_img_url(v):
+    v = (v or "").strip()
+    return v[:600] if re.match(r"^https?://", v) else ""
+
+
+@app.route("/api/leagues/<code>/edit", methods=["POST"])
+@login_required
+def api_edit_league(user, code):
+    lg = db.get_league_by_code(code)
+    if not lg:
+        return jsonify({"error": "No league found with that code."}), 404
+    if lg["owner_id"] != user["id"]:
+        return jsonify({"error": "Only the owner can edit this league."}), 403
+    body = request.get_json(force=True, silent=True) or {}
+    name = (body.get("name") or "").strip()[:50] or lg["name"]
+    logo = _clean_img_url(body.get("logo"))
+    sponsors = []
+    for s in (body.get("sponsors") or [])[:12]:
+        img = _clean_img_url((s or {}).get("img"))
+        if not img:
+            continue
+        sponsors.append({"img": img, "link": _clean_img_url(s.get("link")),
+                         "name": (s.get("name") or "").strip()[:40]})
+    db.update_league_branding(lg["code"], name, logo, json.dumps(sponsors))
+    return jsonify({"ok": True})
 
 
 @app.route("/api/leagues/<code>/member/<int:uid>")

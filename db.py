@@ -48,7 +48,9 @@ def init_db():
                 code     TEXT UNIQUE NOT NULL,
                 name     TEXT NOT NULL,
                 owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                created  INTEGER NOT NULL
+                created  INTEGER NOT NULL,
+                logo     TEXT NOT NULL DEFAULT '',
+                sponsors TEXT NOT NULL DEFAULT '[]'
             );
 
             CREATE TABLE IF NOT EXISTS league_members (
@@ -84,6 +86,11 @@ def init_db():
         cols = [r["name"] for r in conn.execute("PRAGMA table_info(results)")]
         if "winner" not in cols:
             conn.execute("ALTER TABLE results ADD COLUMN winner TEXT")
+        lcols = [r["name"] for r in conn.execute("PRAGMA table_info(leagues)")]
+        if "logo" not in lcols:
+            conn.execute("ALTER TABLE leagues ADD COLUMN logo TEXT NOT NULL DEFAULT ''")
+        if "sponsors" not in lcols:
+            conn.execute("ALTER TABLE leagues ADD COLUMN sponsors TEXT NOT NULL DEFAULT '[]'")
 
 
 # --------------------------------------------------------------- users
@@ -213,7 +220,7 @@ def list_user_leagues(user_id):
     """Leagues the user belongs to, with member counts."""
     with _conn() as conn:
         rows = conn.execute(
-            """SELECT l.id, l.code, l.name, l.owner_id, l.created,
+            """SELECT l.id, l.code, l.name, l.owner_id, l.created, l.logo,
                       (SELECT COUNT(*) FROM league_members m2 WHERE m2.league_id=l.id) AS members
                FROM leagues l
                JOIN league_members m ON m.league_id = l.id
@@ -227,6 +234,12 @@ def list_user_leagues(user_id):
 def update_league_name(code, name):
     with _lock, _conn() as conn:
         conn.execute("UPDATE leagues SET name=? WHERE code=?", (name, code.upper()))
+
+
+def update_league_branding(code, name, logo, sponsors_json):
+    with _lock, _conn() as conn:
+        conn.execute("UPDATE leagues SET name=?, logo=?, sponsors=? WHERE code=?",
+                     (name, logo, sponsors_json, code.upper()))
 
 
 # --------------------------------------------------------------- admin

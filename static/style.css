@@ -647,3 +647,28 @@ table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .venue-name { font-size: 13px; color: var(--text); margin-top: 3px; }
 .venue-alt { color: var(--muted); font-weight: 400; }
 .venue-meta { font-size: 11px; color: var(--muted); margin-top: 8px; }
+
+/* ===================== League branding (logo + sponsors) ===================== */
+.league-title { display: flex; align-items: center; gap: 12px; }
+.league-logo { height: 44px; max-width: 90px; object-fit: contain; border-radius: 8px; }
+.card-logo { height: 20px; max-width: 40px; object-fit: contain; vertical-align: -5px; margin-right: 8px; border-radius: 4px; }
+
+.league-edit {
+  background: linear-gradient(180deg, var(--card2), var(--card));
+  border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 14px 16px; margin: 10px 0 16px; display: flex; flex-direction: column; gap: 10px;
+}
+.league-edit h3 { margin: 0; font-size: 15px; }
+.league-edit label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--muted); }
+.league-edit textarea {
+  background: var(--bg2); border: 1px solid var(--line); color: var(--text);
+  border-radius: 10px; padding: 9px 12px; font-size: 13px; font-family: inherit; resize: vertical;
+}
+.league-edit code { background: var(--bg2); padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+.edit-actions { display: flex; gap: 8px; }
+
+.sponsors-strip { margin: 18px 0 4px; }
+.sponsors-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; text-align: center; margin-bottom: 8px; }
+.sponsors-logos { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; justify-content: center; }
+.sponsors-logos img { height: 40px; max-width: 130px; object-fit: contain; opacity: .92; transition: opacity .15s; }
+.sponsors-logos a:hover img { opacity: 1; }
