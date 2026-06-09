@@ -257,7 +257,8 @@ async function renderLive() {
         <span class="home">${teamHTML(f.home)}</span>
         <span class="score">${inputs}</span>
         <span class="away">${teamHTML(f.away)}</span>
-      </div>`;
+      </div>
+      ${f.venue ? `<div class="fixture-venue">📍 ${f.venue}, ${f.city}</div>` : ""}`;
   });
   wrap.innerHTML = html;
   wrap.querySelectorAll(".fixture:not(.locked) input").forEach(i => {
