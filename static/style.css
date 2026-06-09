@@ -639,7 +639,7 @@ table { width: 100%; border-collapse: collapse; font-size: 13px; }
 [data-theme="light"] .ares-row select,
 [data-theme="light"] .auth-form input,
 [data-theme="light"] .name-input { background: #fff; }
-[data-theme="light"] .win-btn { background: #fff; }
+[data-theme="light"] .win-btn:not(.sel) { background: #fff; }
 [data-theme="light"] .ko-meth { background: #fff; }
 [data-theme="light"] .pred-card .pbar,
 [data-theme="light"] .progress { background: #eceff6; }
