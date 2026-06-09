@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>World Cup 2026 Predictor</title>
+  <script>try { document.documentElement.setAttribute("data-theme", localStorage.getItem("wc2026-theme") || "dark"); } catch (e) {}</script>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
@@ -14,6 +15,7 @@
     </div>
     <div class="header-actions">
       <div id="champion-banner" class="champion hidden"></div>
+      <button id="theme-toggle" class="btn ghost icon-btn" title="Toggle light / dark">🌙</button>
       <button id="save-btn" class="btn primary">Save prediction</button>
       <!-- logged out -->
       <button id="login-btn" class="btn">Log in / Sign up</button>

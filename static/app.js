@@ -108,8 +108,24 @@ function loadState() {
   } catch (_) {}
 }
 
+// ================================================================ theme
+const THEME_KEY = "wc2026-theme";
+function applyTheme(t) {
+  const theme = t === "light" ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", theme);
+  localStorage.setItem(THEME_KEY, theme);
+  const btn = document.getElementById("theme-toggle");
+  if (btn) btn.textContent = theme === "light" ? "🌙" : "☀️";
+}
+function wireTheme() {
+  document.getElementById("theme-toggle").addEventListener("click", () =>
+    applyTheme(document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light"));
+}
+
 // ================================================================ bootstrap
 async function init() {
+  applyTheme(localStorage.getItem(THEME_KEY) || "dark");
+  wireTheme();
   DATA = (await api("GET", "/api/data")).data;
   DATA.bracket.forEach(r => r.matches.forEach(m => {
     bracketLabels[m.id] = { labelA: m.labelA, labelB: m.labelB };
