@@ -557,7 +557,10 @@ table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .bracket2 .ko-match .mid { font-size: 9px; padding: 2px 7px; }
 .bk-finalcol .bk-matches { justify-content: center; }
 .bk-finalcol h4 { color: var(--gold); }
-.bk-finalcol .ko-match { box-shadow: 0 0 0 1px rgba(251,191,36,.35), var(--shadow); }
+.ko-match.final-match {
+  border: 2px solid var(--gold);
+  box-shadow: 0 0 0 2px rgba(251,191,36,.35), 0 0 22px rgba(251,191,36,.45);
+}
 
 /* Penalty advancer — segmented control (replaces the dropdown) */
 .ko-pen { background: none; border: none; padding: 0; display: flex; align-items: center; gap: 6px; justify-content: center; flex-wrap: wrap; }

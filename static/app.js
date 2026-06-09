@@ -1366,7 +1366,9 @@ function renderBracket(res) {
   const fc = document.getElementById("bk-final");
   if (fc) {
     fc.innerHTML = "";
-    fc.appendChild(koMatchEl(104, res.bracket[104] || {}));
+    const finalEl = koMatchEl(104, res.bracket[104] || {});
+    finalEl.classList.add("final-match");
+    fc.appendChild(finalEl);
     const tp = document.createElement("div");
     tp.className = "bk-tp-label";
     tp.textContent = "3rd place play-off";
