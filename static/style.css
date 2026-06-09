@@ -456,3 +456,11 @@ table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .ko-round-h { margin: 14px 0 4px; font-size: 12px; font-weight: 700; color: var(--accent2); text-transform: uppercase; letter-spacing: .5px; }
 .ares-row.ko { grid-template-columns: minmax(220px,1.8fr) 44px 44px 104px 1.3fr; }
 .ares-row.ko .ako-w { width: 100%; }
+
+/* Knockout live predictor */
+.ko-await { font-size: 12px; color: var(--muted); padding: 6px 10px; font-style: italic; }
+.ko-pen-row { display: flex; justify-content: center; margin: 0 0 6px; }
+.ko-pen {
+  background: var(--bg2); border: 1px solid var(--accent2); color: var(--text);
+  border-radius: 6px; padding: 4px 8px; font-size: 12px;
+}

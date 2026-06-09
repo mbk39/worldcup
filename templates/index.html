@@ -64,8 +64,19 @@
         <h2>Live Picks</h2>
         <p class="hint">Predict each game right up to kick-off — every match locks when it starts. This is separate from your locked Tournament bracket, so you can start anytime (great if you joined late). Saves automatically.</p>
       </div>
-      <div id="live-points" class="live-points"></div>
-      <div id="live-list"></div>
+      <div class="subtoggle" id="live-toggle">
+        <button class="subtab active" data-livesub="group">Group stage</button>
+        <button class="subtab" data-livesub="knockout">Knockout</button>
+      </div>
+      <div id="live-group" class="sub-panel active">
+        <div id="live-points" class="live-points"></div>
+        <div id="live-list"></div>
+      </div>
+      <div id="live-ko" class="sub-panel">
+        <div id="live-ko-points" class="live-points"></div>
+        <div id="live-ko-notice" class="notice hidden"></div>
+        <div id="live-ko-list"></div>
+      </div>
     </section>
 
     <section id="tab-results" class="tab-panel">

@@ -9,7 +9,9 @@ let currentUser = null;
 let verificationEnforced = false;
 let authGate = false;   // true when the login/signup screen is the mandatory landing
 let RESULTS = {};       // actual match results: match_id -> {home,away,status,scorers}
-let LIVE_SCORES = {};   // this user's continuous per-match picks
+let LIVE_SCORES = {};   // this user's continuous per-match group picks
+let LIVE_KO = {};       // this user's knockout picks {K-73: {home,away,adv}}
+let ACTUAL_GROUP_COMPLETE = false;
 let LOCKS = { tournamentLocked: false, lockedMatches: new Set(), tournamentLockTime: 0 };
 const ZERO_PTS = { total: 0, perMatch: {} };
 const ZERO_POINTS = () => ({ tournament: { ...ZERO_PTS }, group: { ...ZERO_PTS }, knockout: { ...ZERO_PTS } });
@@ -29,6 +31,11 @@ async function fetchLive() {
   if (!currentUser) { LIVE_SCORES = {}; return; }
   const r = await api("GET", "/api/live");
   LIVE_SCORES = r.ok ? (r.data.scores || {}) : {};
+}
+async function fetchLiveKo() {
+  if (!currentUser) { LIVE_KO = {}; return; }
+  const r = await api("GET", "/api/live/ko");
+  LIVE_KO = r.ok ? (r.data.scores || {}) : {};
 }
 async function fetchMyPoints() {
   if (!currentUser) { MYPOINTS = ZERO_POINTS(); return; }
@@ -116,6 +123,7 @@ async function init() {
   wireAuthModal();
   wireLeagues();
   wireSubToggle();
+  wireLiveSubToggle();
   handleVerifyRedirect();
   await refreshAuth();     // loads server prediction if logged in
   await fetchLive();
@@ -137,6 +145,7 @@ function startLiveRefresh() {
       await renderResults();
     } else if (active === "live") {
       await renderLive();
+      await renderLiveKnockout();
     } else if (active === "leagues" &&
                !document.getElementById("league-detail").classList.contains("hidden")) {
       const code = document.getElementById("league-detail-code").textContent;
@@ -231,15 +240,121 @@ async function onLiveChange(e) {
     `Your rolling points so far: <b>${MYPOINTS.group?.total || 0}</b>`;
 }
 
+async function renderLiveKnockout() {
+  const wrap = document.getElementById("live-ko-list");
+  if (!wrap || !DATA) return;
+  await fetchLocks();
+  await fetchActualBracket();
+  await fetchLiveKo();
+  await fetchResults();
+  await fetchMyPoints();
+  document.getElementById("live-ko-points").innerHTML =
+    `Your knockout points so far: <b>${MYPOINTS.knockout?.total || 0}</b>`;
+
+  const notice = document.getElementById("live-ko-notice");
+  if (!ACTUAL_GROUP_COMPLETE) {
+    notice.classList.remove("hidden");
+    notice.textContent = "🔒 Knockout predictions open once the group stage finishes and the Round-of-32 is set.";
+    wrap.innerHTML = "";
+    return;
+  }
+  notice.classList.add("hidden");
+
+  let html = "";
+  DATA.bracket.forEach(round => {
+    html += `<div class="ko-round-h">${round.name}</div>`;
+    round.matches.forEach(m => {
+      const a = ACTUAL_BRACKET[String(m.id)] || {};
+      const kid = "K-" + m.id;
+      const known = a.teamA && a.teamB;
+      if (!known) {
+        html += `<div class="ko-await">Match ${m.id} — awaiting earlier results</div>`;
+        return;
+      }
+      const locked = LOCKS.lockedMatches.has(kid);
+      const sc = LIVE_KO[kid] || {};
+      const res = RESULTS[kid];
+      const when = m.date ? `${fmtDate(m.date)} · ${m.time} BST` : "";
+      const resBadge = (res && res.home != null)
+        ? `<span class="st ${res.status === "live" ? "live" : "ft"}">${res.status === "live" ? "LIVE" : "FT"} ${res.home}–${res.away}</span>` : "";
+      const lockChip = locked ? `<span class="lockchip">🔒</span>` : "";
+      let pill = "";
+      if (res && res.home != null && sc.home != null && sc.away != null) {
+        const p = MYPOINTS.knockout?.perMatch?.[kid];
+        if (p != null) pill = `<span class="pts pts${p}">+${p}</span>`;
+      }
+      const isDraw = sc.home != null && sc.home === sc.away;
+      const penSel = `<select class="ko-pen" ${locked ? "disabled" : ""} style="${isDraw ? "" : "display:none"}">
+          <option value="">advances on pens…</option>
+          <option${sc.adv === a.teamA ? " selected" : ""}>${escapeHTML(a.teamA)}</option>
+          <option${sc.adv === a.teamB ? " selected" : ""}>${escapeHTML(a.teamB)}</option></select>`;
+      const inputs = locked
+        ? `<span class="locked-pick">${sc.home ?? "–"} – ${sc.away ?? "–"}${sc.adv && isDraw ? " (" + escapeHTML(sc.adv) + ")" : ""}</span>`
+        : `<input type="number" min="0" max="99" class="ko-h" value="${sc.home ?? ""}">` +
+          `<span>–</span><input type="number" min="0" max="99" class="ko-a" value="${sc.away ?? ""}">`;
+      html += `<div class="live-meta"><span class="when">${when}</span> ${resBadge} ${lockChip} ${pill}</div>
+        <div class="fixture${locked ? " locked" : ""}" data-mid="${kid}" data-a="${escapeHTML(a.teamA)}" data-b="${escapeHTML(a.teamB)}">
+          <span class="home">${teamHTML(a.teamA)}</span>
+          <span class="score">${inputs}</span>
+          <span class="away">${teamHTML(a.teamB)}</span>
+        </div>
+        <div class="ko-pen-row">${locked ? "" : penSel}</div>`;
+    });
+  });
+  wrap.innerHTML = html;
+  wrap.querySelectorAll(".fixture:not(.locked)").forEach(row => {
+    row.querySelectorAll("input").forEach(i => {
+      i.addEventListener("input", () => toggleKoPen(row));
+      i.addEventListener("change", () => onLiveKoChange(row));
+      i.addEventListener("focus", () => i.select());
+    });
+    const pen = row.nextElementSibling?.querySelector(".ko-pen");
+    if (pen) pen.addEventListener("change", () => onLiveKoChange(row));
+  });
+}
+
+function toggleKoPen(row) {
+  const h = row.querySelector(".ko-h").value, a = row.querySelector(".ko-a").value;
+  const pen = row.nextElementSibling?.querySelector(".ko-pen");
+  if (pen) pen.style.display = (h !== "" && a !== "" && +h === +a) ? "" : "none";
+}
+
+async function onLiveKoChange(row) {
+  const kid = row.dataset.mid;
+  const h = row.querySelector(".ko-h").value, a = row.querySelector(".ko-a").value;
+  const pen = row.nextElementSibling?.querySelector(".ko-pen");
+  let adv = null;
+  if (h !== "" && a !== "") {
+    if (+h === +a) adv = pen ? pen.value || null : null;
+    else adv = (+h > +a) ? row.dataset.a : row.dataset.b;
+  }
+  const { ok, data } = await api("POST", "/api/live/ko", { scores: { [kid]: { home: h, away: a, adv } } });
+  if (ok) LIVE_KO = data.scores;
+  await fetchMyPoints();
+  document.getElementById("live-ko-points").innerHTML =
+    `Your knockout points so far: <b>${MYPOINTS.knockout?.total || 0}</b>`;
+}
+
 function wireSubToggle() {
-  document.querySelectorAll(".subtab").forEach(b =>
+  document.querySelectorAll("#tab-predictor > .subtoggle .subtab").forEach(b =>
     b.addEventListener("click", () => showSub(b.dataset.sub)));
 }
 function showSub(which) {
-  document.querySelectorAll(".subtab").forEach(t =>
+  document.querySelectorAll("#tab-predictor > .subtoggle .subtab").forEach(t =>
     t.classList.toggle("active", t.dataset.sub === which));
   document.getElementById("sub-groups").classList.toggle("active", which === "groups");
   document.getElementById("sub-knockout").classList.toggle("active", which === "knockout");
+}
+
+function wireLiveSubToggle() {
+  document.querySelectorAll("#live-toggle .subtab").forEach(b =>
+    b.addEventListener("click", () => {
+      const which = b.dataset.livesub;
+      document.querySelectorAll("#live-toggle .subtab").forEach(t =>
+        t.classList.toggle("active", t.dataset.livesub === which));
+      document.getElementById("live-group").classList.toggle("active", which === "group");
+      document.getElementById("live-ko").classList.toggle("active", which === "knockout");
+    }));
 }
 
 function wireTabs() {
@@ -252,7 +367,7 @@ function wireTabs() {
       if (tab.dataset.tab === "leagues" && currentUser) refreshLeagues();
       if (tab.dataset.tab === "admin" && currentUser && currentUser.isAdmin) renderAdmin();
       if (tab.dataset.tab === "results") renderResults();
-      if (tab.dataset.tab === "live") renderLive();
+      if (tab.dataset.tab === "live") { renderLive(); renderLiveKnockout(); }
     });
   });
 }
@@ -550,6 +665,7 @@ async function deleteLeague(code) {
 async function fetchActualBracket() {
   const r = await api("GET", "/api/bracket/actual");
   ACTUAL_BRACKET = r.ok ? (r.data.bracket || {}) : {};
+  ACTUAL_GROUP_COMPLETE = r.ok ? !!r.data.groupComplete : false;
 }
 
 async function renderAdmin() {

@@ -39,6 +39,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 import db
 import emailer
 import points as scoring
+import schedule
 from data import (
     GROUPS, FLAGS, FLAG_CODES, build_group_fixtures,
     R32, R16, QF, SF, FINAL,
@@ -66,10 +67,16 @@ def _kickoff_epoch(date_str, time_str):
     return int(dt.replace(tzinfo=_BST).timestamp())
 
 
-# match_id -> kickoff (unix seconds). Group stage only (knockout dates TBD).
+# match_id -> kickoff (unix seconds). Group fixtures + knockout matches.
 _KICKOFFS = {f["id"]: _kickoff_epoch(f["date"], f["time"])
              for f in _GROUP_FIXTURES if f.get("date") and f.get("time")}
-_TOURNAMENT_LOCK = min(_KICKOFFS.values()) if _KICKOFFS else 4102444800
+for _num, _raw in schedule.KO_KICKOFFS_UTC.items():
+    _KICKOFFS[f"K-{_num}"] = schedule.ko_info(_num)["epoch"]
+# Tournament bracket locks at the first match overall (the opening group game).
+_TOURNAMENT_LOCK = min(
+    f["id"] and _kickoff_epoch(f["date"], f["time"])
+    for f in _GROUP_FIXTURES if f.get("date") and f.get("time")
+)
 
 
 def _now():
@@ -229,7 +236,9 @@ def _bracket_template():
                 a_lbl, b_lbl = label(sides[0]), label(sides[1])
             else:
                 a_lbl, b_lbl = f"W{sides[0]}", f"W{sides[1]}"
-            matches.append({"id": mid, "labelA": a_lbl, "labelB": b_lbl})
+            ko = schedule.ko_info(mid) or {}
+            matches.append({"id": mid, "labelA": a_lbl, "labelB": b_lbl,
+                            "date": ko.get("date"), "time": ko.get("time")})
         rounds.append({"name": name, "matches": matches})
     return rounds
 
@@ -425,6 +434,36 @@ def api_save_live(user):
         else:
             existing[mid] = {"home": h, "away": a}
     db.save_live(user["id"], existing, int(time.time()))
+    return jsonify({"ok": True, "scores": existing, "rejected": rejected})
+
+
+@app.route("/api/live/ko", methods=["GET"])
+@login_required
+def api_get_live_ko(user):
+    return jsonify({"scores": db.get_live_ko(user["id"])})
+
+
+@app.route("/api/live/ko", methods=["POST"])
+@login_required
+def api_save_live_ko(user):
+    body = request.get_json(force=True, silent=True) or {}
+    incoming = body.get("scores") or {}
+    locked = _locked_match_ids()
+    existing = db.get_live_ko(user["id"])
+    rejected = 0
+    for mid, sc in incoming.items():
+        if not mid.startswith("K-") or mid not in _KICKOFFS:
+            continue
+        if mid in locked:
+            rejected += 1
+            continue
+        h, a = _parse_score((sc or {}).get("home")), _parse_score((sc or {}).get("away"))
+        adv = ((sc or {}).get("adv") or "").strip()[:40] or None
+        if h is None and a is None:
+            existing.pop(mid, None)
+        else:
+            existing[mid] = {"home": h, "away": a, "adv": adv}
+    db.save_live_ko(user["id"], existing, int(time.time()))
     return jsonify({"ok": True, "scores": existing, "rejected": rejected})
 
 
