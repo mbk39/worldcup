@@ -1196,13 +1196,23 @@ function jumpToFixture(fid) {
   (empty || inp).focus();
 }
 
+// Highlight class for a standings row.
+// 1st & 2nd = direct qualifiers (q12). 3rd = conditional (q3) — but once the
+// group stage is complete, only the qualifying 3rd-placed teams keep it.
+function standRowClass(pos, letter, complete, qualThirds) {
+  if (pos <= 2) return "q12";
+  if (pos === 3) return (!complete || qualThirds.has(letter)) ? "q3" : "";
+  return "";
+}
+
 function renderStandings(res) {
+  const qualThirds = new Set((res.thirdPlaceRanked || []).filter(t => t.qualified).map(t => t.group));
   Object.entries(res.standings).forEach(([letter, data]) => {
     const t = document.getElementById("standings-" + letter);
     if (!t) return;
     let html = `<tr><th class="team">Team</th><th>Pl</th><th>W</th><th>D</th><th>L</th><th>GD</th><th>Pts</th></tr>`;
     data.rows.forEach(r => {
-      const cls = r.pos <= 3 ? `pos${r.pos}` : "";
+      const cls = standRowClass(r.pos, letter, res.groupsComplete, qualThirds);
       const gd = r.gd > 0 ? "+" + r.gd : r.gd;
       html += `<tr class="${cls}">
         <td class="team">${teamHTML(r.team)}</td>
@@ -1242,13 +1252,20 @@ function renderThirdPlace(res) {
 function renderResultsStandings(st) {
   const wrap = document.getElementById("results-standings");
   if (!wrap) return;
+  const allComplete = Object.keys(DATA.groups).every(l => (st[l] || {}).complete);
+  let qualThirds = new Set();
+  if (allComplete) {
+    const thirds = Object.entries(st).map(([l, d]) => ({ group: l, ...(d.rows[2] || {}) }));
+    thirds.sort((a, b) => (b.points - a.points) || (b.gd - a.gd) || (b.gf - a.gf));
+    qualThirds = new Set(thirds.slice(0, 8).map(t => t.group));
+  }
   let html = "";
   Object.keys(DATA.groups).forEach(letter => {
     const rows = (st[letter] || {}).rows || [];
     html += `<div class="group-card"><h3>Group ${letter}</h3>
       <table class="standings"><tr><th class="team">Team</th><th>Pl</th><th>W</th><th>D</th><th>L</th><th>GD</th><th>Pts</th></tr>`;
     rows.forEach(r => {
-      const cls = r.pos <= 3 ? `pos${r.pos}` : "";
+      const cls = standRowClass(r.pos, letter, allComplete, qualThirds);
       const gd = r.gd > 0 ? "+" + r.gd : r.gd;
       html += `<tr class="${cls}"><td class="team">${teamHTML(r.team)}</td>
         <td>${r.played}</td><td>${r.won}</td><td>${r.drawn}</td><td>${r.lost}</td>

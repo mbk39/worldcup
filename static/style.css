@@ -217,9 +217,9 @@ table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .standings th { color: var(--muted); font-weight: 600; text-align: center; padding: 3px; }
 .standings td { padding: 4px 3px; text-align: center; border-top: 1px solid var(--line); }
 .standings td.team { text-align: left; white-space: nowrap; }
-.standings tr.pos1 td { background: rgba(251,146,60,.14); }
-.standings tr.pos2 td { background: rgba(251,191,36,.12); }
-.standings tr.pos3 td { background: rgba(251,191,36,.10); }
+/* 1st & 2nd: direct qualifiers (same). 3rd: conditional qualifier (distinct). */
+.standings tr.q12 td { background: rgba(31,157,99,.18); }
+.standings tr.q3 td { background: rgba(251,191,36,.15); }
 .flag { margin-right: 6px; }
 
 .fixtures { margin-top: 12px; }
