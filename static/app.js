@@ -31,6 +31,14 @@ function chanClass(ch) {
   if (ch.startsWith("ITV")) return "itv";
   return "";
 }
+const _DOW_LONG = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const _MON_LONG = ["January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"];
+function fmtFullDate(iso) {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  return `${_DOW_LONG[dow]} ${d} ${_MON_LONG[m - 1]}`;
+}
 
 function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 function loadState() {
@@ -191,6 +199,37 @@ async function simulate() {
   renderBracket(res);
   renderChampion(res);
   renderProgress();
+  renderSchedule();
+}
+
+function renderSchedule() {
+  const wrap = document.getElementById("schedule-list");
+  if (!wrap || !DATA) return;
+  const fx = [...DATA.fixtures]
+    .filter(f => f.date)
+    .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  let html = "";
+  let curDate = null;
+  fx.forEach(f => {
+    if (f.date !== curDate) {
+      curDate = f.date;
+      html += `<div class="sched-day">${fmtFullDate(f.date)}</div>`;
+    }
+    const sc = state.groupScores[f.id] || {};
+    const has = sc.home != null && sc.away != null;
+    const mid = has
+      ? `<span class="sc">${sc.home} – ${sc.away}</span>`
+      : `<span class="vs">v</span>`;
+    html += `<div class="sched-row">
+      <span class="t">${f.time}</span>
+      <span class="grp" title="Group ${f.group}">${f.group}</span>
+      <span class="h">${teamHTML(f.home)}</span>
+      ${mid}
+      <span class="a">${teamHTML(f.away)}</span>
+      <span class="chan ${chanClass(f.channel)}">${f.channel || ""}</span>
+    </div>`;
+  });
+  wrap.innerHTML = html;
 }
 
 function renderProgress() {

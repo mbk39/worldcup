@@ -23,6 +23,7 @@
 
   <nav class="tabs">
     <button class="tab active" data-tab="groups">Group Stage</button>
+    <button class="tab" data-tab="schedule">Schedule</button>
     <button class="tab" data-tab="knockout">Knockout Bracket</button>
     <button class="tab" data-tab="predictions">Everyone's Predictions</button>
   </nav>
@@ -36,6 +37,14 @@
         <p class="hint">Top 8 advance to the Round of 32 (shaded).</p>
         <table id="third-table"></table>
       </div>
+    </section>
+
+    <section id="tab-schedule" class="tab-panel">
+      <div class="predictions-head">
+        <h2>Match Schedule</h2>
+        <p class="hint">All 72 group matches in kick-off order (UK time). Your predicted scores appear here as you fill them in on the Group Stage tab.</p>
+      </div>
+      <div id="schedule-list"></div>
     </section>
 
     <section id="tab-knockout" class="tab-panel">
