@@ -312,8 +312,7 @@ async function renderLiveKnockout() {
       const locked = LOCKS.lockedMatches.has(kid);
       const sc = LIVE_KO[kid] || {};
       const res = RESULTS[kid];
-      const when = (m.date ? `${fmtDate(m.date)} · ${m.time} BST` : "") +
-        (m.venue ? ` · 📍 ${m.venue}` : "");
+      const when = m.date ? `${fmtDate(m.date)} · ${m.time} BST` : "";
       const resBadge = (res && res.home != null)
         ? `<span class="st ${res.status === "live" ? "live" : "ft"}">${res.status === "live" ? "LIVE" : "FT"} ${res.home}–${res.away}</span>` : "";
       const lockChip = locked ? `<span class="lockchip">🔒</span>` : "";
@@ -339,7 +338,8 @@ async function renderLiveKnockout() {
           <span class="score">${inputs}</span>
           <span class="away">${teamHTML(a.teamB)}</span>
         </div>
-        ${locked ? "" : `<div class="ko-pen-row">${penPicker}</div>`}`;
+        ${locked ? "" : `<div class="ko-pen-row">${penPicker}</div>`}
+        ${m.venue ? `<div class="fixture-venue">📍 ${escapeHTML(m.venue)}, ${escapeHTML(m.city)}</div>` : ""}`;
     });
   });
   wrap.innerHTML = html;
@@ -1062,12 +1062,6 @@ function renderGroups() {
           `<span class="when">${fmtDate(fx.date)} · ${fx.time} BST</span>` +
           `<span class="chan ${chanClass(fx.channel)}">${fx.channel}</span>`;
         fxWrap.appendChild(meta);
-        if (fx.venue) {
-          const v = document.createElement("div");
-          v.className = "fixture-venue";
-          v.textContent = `📍 ${fx.localTime ? fx.localTime + " local · " : ""}${fx.venue}, ${fx.city}`;
-          fxWrap.appendChild(v);
-        }
       }
       const row = document.createElement("div");
       row.className = "fixture";
@@ -1081,6 +1075,12 @@ function renderGroups() {
         <span class="away">${teamHTML(fx.away)}</span>`;
       fxWrap.appendChild(row);
       markFixture(row);
+      if (fx.venue) {
+        const v = document.createElement("div");
+        v.className = "fixture-venue";
+        v.textContent = `📍 ${fx.venue}, ${fx.city}`;
+        fxWrap.appendChild(v);
+      }
     });
   });
 
@@ -1308,7 +1308,7 @@ async function renderResults() {
         <span class="a">${teamHTML(f.away)}</span>
         <span class="chan ${chanClass(f.channel)}">${f.channel || ""}</span>
       </div>
-      ${f.venue ? `<div class="fixture-venue">📍 ${f.localTime ? f.localTime + " local · " : ""}${f.venue}, ${f.city}</div>` : ""}
+      ${f.venue ? `<div class="fixture-venue">📍 ${f.venue}, ${f.city}</div>` : ""}
       ${scLine}${predLine}
     </div>`;
   });
