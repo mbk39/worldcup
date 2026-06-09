@@ -304,21 +304,23 @@ async function renderLiveKnockout() {
         if (p != null) pill = `<span class="pts pts${p}">+${p}</span>`;
       }
       const isDraw = sc.home != null && sc.home === sc.away;
-      const penSel = `<select class="ko-pen" ${locked ? "disabled" : ""} style="${isDraw ? "" : "display:none"}">
-          <option value="">advances on pens…</option>
-          <option${sc.adv === a.teamA ? " selected" : ""}>${escapeHTML(a.teamA)}</option>
-          <option${sc.adv === a.teamB ? " selected" : ""}>${escapeHTML(a.teamB)}</option></select>`;
+      const penPicker = `<div class="ko-pen${isDraw ? "" : " hidden"}">
+          <span class="ko-pen-label">Penalties:</span>
+          <button type="button" class="pen-btn${sc.adv === a.teamA ? " sel" : ""}" data-team="${escapeHTML(a.teamA)}">${escapeHTML(a.teamA)}</button>
+          <button type="button" class="pen-btn${sc.adv === a.teamB ? " sel" : ""}" data-team="${escapeHTML(a.teamB)}">${escapeHTML(a.teamB)}</button>
+        </div>`;
+      const advNote = sc.adv ? ` <span class="adv-note">→ ${escapeHTML(sc.adv)}</span>` : "";
       const inputs = locked
         ? `<span class="locked-pick">${sc.home ?? "–"} – ${sc.away ?? "–"}${sc.adv && isDraw ? " (" + escapeHTML(sc.adv) + ")" : ""}</span>`
         : `<input type="number" min="0" max="99" class="ko-h" value="${sc.home ?? ""}">` +
           `<span>–</span><input type="number" min="0" max="99" class="ko-a" value="${sc.away ?? ""}">`;
-      html += `<div class="live-meta"><span class="when">${when}</span> ${resBadge} ${lockChip} ${pill}</div>
+      html += `<div class="live-meta"><span class="when">${when}</span> ${resBadge} ${lockChip} ${pill}${locked ? "" : advNote}</div>
         <div class="fixture${locked ? " locked" : ""}" data-mid="${kid}" data-a="${escapeHTML(a.teamA)}" data-b="${escapeHTML(a.teamB)}">
           <span class="home">${teamHTML(a.teamA)}</span>
           <span class="score">${inputs}</span>
           <span class="away">${teamHTML(a.teamB)}</span>
         </div>
-        <div class="ko-pen-row">${locked ? "" : penSel}</div>`;
+        ${locked ? "" : `<div class="ko-pen-row">${penPicker}</div>`}`;
     });
   });
   wrap.innerHTML = html;
@@ -329,14 +331,18 @@ async function renderLiveKnockout() {
       i.addEventListener("focus", () => i.select());
     });
     const pen = row.nextElementSibling?.querySelector(".ko-pen");
-    if (pen) pen.addEventListener("change", () => onLiveKoChange(row));
+    if (pen) pen.querySelectorAll(".pen-btn").forEach(btn =>
+      btn.addEventListener("click", () => {
+        pen.querySelectorAll(".pen-btn").forEach(b => b.classList.toggle("sel", b === btn));
+        onLiveKoChange(row);
+      }));
   });
 }
 
 function toggleKoPen(row) {
   const h = row.querySelector(".ko-h").value, a = row.querySelector(".ko-a").value;
   const pen = row.nextElementSibling?.querySelector(".ko-pen");
-  if (pen) pen.style.display = (h !== "" && a !== "" && +h === +a) ? "" : "none";
+  if (pen) pen.classList.toggle("hidden", !(h !== "" && a !== "" && +h === +a));
 }
 
 async function onLiveKoChange(row) {
@@ -345,8 +351,12 @@ async function onLiveKoChange(row) {
   const pen = row.nextElementSibling?.querySelector(".ko-pen");
   let adv = null;
   if (h !== "" && a !== "") {
-    if (+h === +a) adv = pen ? pen.value || null : null;
-    else adv = (+h > +a) ? row.dataset.a : row.dataset.b;
+    if (+h === +a) {
+      const sel = pen?.querySelector(".pen-btn.sel");
+      adv = sel ? sel.dataset.team : null;
+    } else {
+      adv = (+h > +a) ? row.dataset.a : row.dataset.b;
+    }
   }
   const { ok, data } = await api("POST", "/api/live/ko", { scores: { [kid]: { home: h, away: a, adv } } });
   if (ok) LIVE_KO = data.scores;
@@ -1125,11 +1135,32 @@ function renderThirdPlace(res) {
   table.innerHTML = html;
 }
 
+function renderResultsStandings(st) {
+  const wrap = document.getElementById("results-standings");
+  if (!wrap) return;
+  let html = "";
+  Object.keys(DATA.groups).forEach(letter => {
+    const rows = (st[letter] || {}).rows || [];
+    html += `<div class="group-card"><h3>Group ${letter}</h3>
+      <table class="standings"><tr><th class="team">Team</th><th>Pl</th><th>W</th><th>D</th><th>L</th><th>GD</th><th>Pts</th></tr>`;
+    rows.forEach(r => {
+      const cls = r.pos <= 3 ? `pos${r.pos}` : "";
+      const gd = r.gd > 0 ? "+" + r.gd : r.gd;
+      html += `<tr class="${cls}"><td class="team">${teamHTML(r.team)}</td>
+        <td>${r.played}</td><td>${r.won}</td><td>${r.drawn}</td><td>${r.lost}</td>
+        <td>${gd}</td><td><b>${r.points}</b></td></tr>`;
+    });
+    html += `</table></div>`;
+  });
+  wrap.innerHTML = html;
+}
+
 async function renderResults() {
   const wrap = document.getElementById("results-list");
   if (!wrap || !DATA) return;
   await fetchResults();
   await fetchMyPoints();
+  renderResultsStandings((await api("GET", "/api/standings")).data || {});
   const fx = [...DATA.fixtures].filter(f => f.date)
     .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
   let html = "", curDate = null;
@@ -1180,15 +1211,35 @@ async function renderResults() {
   wrap.innerHTML = html;
 }
 
+// Mirrored bracket: left half feeds SF 101, right half feeds SF 102, Final in centre.
+const BK_LEFT = [
+  ["Round of 32", [73, 79, 74, 77, 75, 78, 76, 81]],
+  ["Round of 16", [89, 90, 91, 92]],
+  ["Quarter-finals", [97, 98]],
+  ["Semi-final", [101]],
+];
+const BK_RIGHT = [
+  ["Semi-final", [102]],
+  ["Quarter-finals", [99, 100]],
+  ["Round of 16", [93, 94, 95, 96]],
+  ["Round of 32", [82, 86, 87, 83, 80, 84, 85, 88]],
+];
+
 function renderBracketSkeleton() {
   const wrap = document.getElementById("bracket");
+  wrap.className = "bracket2";
   wrap.innerHTML = "";
-  DATA.bracket.forEach(round => {
-    const col = document.createElement("div");
-    col.className = "round";
-    col.innerHTML = `<h4>${round.name}</h4><div class="round-matches" id="round-${round.name.replace(/\W/g, "")}"></div>`;
-    wrap.appendChild(col);
-  });
+  const col = (name, id) => {
+    const c = document.createElement("div");
+    c.className = "bk-col";
+    c.innerHTML = `<h4>${name}</h4><div class="bk-matches" id="${id}"></div>`;
+    return c;
+  };
+  BK_LEFT.forEach(([name], i) => wrap.appendChild(col(name, "bk-L" + i)));
+  const fin = col("Final", "bk-final");
+  fin.classList.add("bk-finalcol");
+  wrap.appendChild(fin);
+  BK_RIGHT.forEach(([name], i) => wrap.appendChild(col(name, "bk-R" + i)));
 }
 
 function renderBracket(res) {
@@ -1199,11 +1250,15 @@ function renderBracket(res) {
   } else {
     notice.classList.add("hidden");
   }
-  DATA.bracket.forEach(round => {
-    const container = document.getElementById("round-" + round.name.replace(/\W/g, ""));
-    container.innerHTML = "";
-    round.matches.forEach(m => container.appendChild(koMatchEl(m.id, res.bracket[m.id] || {})));
-  });
+  const fill = (id, ids) => {
+    const c = document.getElementById(id);
+    if (!c) return;
+    c.innerHTML = "";
+    ids.forEach(mid => c.appendChild(koMatchEl(mid, res.bracket[mid] || {})));
+  };
+  BK_LEFT.forEach(([, ids], i) => fill("bk-L" + i, ids));
+  BK_RIGHT.forEach(([, ids], i) => fill("bk-R" + i, ids));
+  fill("bk-final", [104]);
 }
 
 function koMatchEl(mid, b) {

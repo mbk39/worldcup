@@ -44,6 +44,7 @@ from data import (
     GROUPS, FLAGS, FLAG_CODES, build_group_fixtures,
     R32, R16, QF, SF, FINAL,
 )
+import engine
 from engine import simulate
 
 app = Flask(__name__)
@@ -388,6 +389,21 @@ def api_save_prediction(user):
 @app.route("/api/results")
 def api_results():
     return jsonify(db.get_all_results())
+
+
+@app.route("/api/standings")
+def api_standings():
+    """Actual group standings computed from real results."""
+    gs = {mid: {"home": r["home"], "away": r["away"]}
+          for mid, r in db.get_all_results().items()
+          if mid.startswith("G-") and isinstance(r.get("home"), int)
+          and isinstance(r.get("away"), int)}
+    standings = engine.compute_all_groups(gs)
+    return jsonify({
+        l: {"complete": d["complete"],
+            "rows": [{**row, "pos": i + 1} for i, row in enumerate(d["rows"])]}
+        for l, d in standings.items()
+    })
 
 
 @app.route("/api/me/points")
