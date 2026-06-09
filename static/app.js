@@ -7,6 +7,7 @@ let bracketLabels = {};
 let simTimer = null, serverSaveTimer = null;
 let currentUser = null;
 let verificationEnforced = false;
+let authGate = false;   // true when the login/signup screen is the mandatory landing
 
 // ================================================================ helpers
 function teamHTML(team) {
@@ -150,14 +151,30 @@ function updateAuthUI() {
   document.getElementById("leagues-main").classList.toggle("hidden", !loggedIn);
   const admin = loggedIn && currentUser.isAdmin;
   document.querySelectorAll(".admin-only").forEach(el => el.classList.toggle("hidden", !admin));
+
+  // Logged out → mandatory sign-up/login landing. Logged in → close it.
+  if (loggedIn) closeAuthGate();
+  else openAuth("signup", true);
 }
 
-function openAuth(which) {
-  document.getElementById("auth-modal").classList.remove("hidden");
+function openAuth(which, gate) {
+  authGate = !!gate;
+  const modal = document.getElementById("auth-modal");
+  modal.classList.remove("hidden");
+  modal.classList.toggle("gate", authGate);
+  document.getElementById("auth-close").classList.toggle("hidden", authGate);
   switchAuthTab(which || "login");
 }
 function closeAuth() {
+  if (authGate) return;   // can't dismiss the landing gate while logged out
   document.getElementById("auth-modal").classList.add("hidden");
+  hideAuthMsgs();
+}
+function closeAuthGate() {
+  authGate = false;
+  const modal = document.getElementById("auth-modal");
+  modal.classList.add("hidden");
+  modal.classList.remove("gate");
   hideAuthMsgs();
 }
 function hideAuthMsgs() {
@@ -209,12 +226,12 @@ function wireAuthModal() {
     const { ok, data } = await api("POST", "/api/auth/signup", { displayName, email, password });
     if (!ok) { authError(data.error || "Sign-up failed."); return; }
     if (data.needVerify) {
-      authMessage(data.message || "Check your email to confirm your account, then log in.");
-      switchAuthTab("login");
+      switchAuthTab("login");   // (clears messages first)
+      authMessage(`✅ Account created! We've emailed a confirmation link to ${email}. ` +
+        `Please open it to verify your email, then log in here.`);
       return;
     }
-    closeAuth();
-    await refreshAuth();
+    await refreshAuth();        // dev auto-verify: logs in + closes the gate
     await refreshLeagues();
   });
 }

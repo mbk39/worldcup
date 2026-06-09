@@ -360,3 +360,12 @@ table { width: 100%; border-collapse: collapse; font-size: 13px; }
   padding: 6px 0; border-top: 1px solid var(--line); font-size: 13px;
 }
 .admin-member-row:first-child { border-top: none; }
+
+/* Auth landing gate */
+.auth-head { text-align: center; margin-bottom: 16px; }
+.auth-head h2 { margin: 0 0 6px; font-size: 19px; }
+.auth-head p { margin: 0; color: var(--muted); font-size: 13px; }
+.modal-overlay.gate {
+  background: radial-gradient(900px 500px at 50% -10%, #1b2a4d 0%, var(--bg) 60%);
+  backdrop-filter: none;
+}
