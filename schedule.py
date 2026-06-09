@@ -119,22 +119,22 @@ KO_KICKOFFS_UTC = {
 # ---------------------------------------------------------------- venues
 # name -> city, country, UTC offset (June/July; US/Canada on DST, Mexico not).
 VENUES = {
-    "Estadio Banorte": {"city": "Mexico City", "country": "Mexico", "off": -6, "alt": "Estadio Azteca"},
-    "Estadio Akron": {"city": "Guadalajara", "country": "Mexico", "off": -6},
-    "Estadio BBVA": {"city": "Monterrey", "country": "Mexico", "off": -6},
-    "BMO Field": {"city": "Toronto", "country": "Canada", "off": -4},
-    "BC Place": {"city": "Vancouver", "country": "Canada", "off": -7},
-    "SoFi Stadium": {"city": "Los Angeles", "country": "USA", "off": -7},
-    "Levi's Stadium": {"city": "San Francisco Bay Area", "country": "USA", "off": -7},
-    "Lumen Field": {"city": "Seattle", "country": "USA", "off": -7},
-    "MetLife Stadium": {"city": "New York / New Jersey", "country": "USA", "off": -4},
-    "Gillette Stadium": {"city": "Boston", "country": "USA", "off": -4},
-    "Lincoln Financial Field": {"city": "Philadelphia", "country": "USA", "off": -4},
-    "Hard Rock Stadium": {"city": "Miami", "country": "USA", "off": -4},
-    "Mercedes-Benz Stadium": {"city": "Atlanta", "country": "USA", "off": -4},
-    "NRG Stadium": {"city": "Houston", "country": "USA", "off": -5},
-    "AT&T Stadium": {"city": "Dallas", "country": "USA", "off": -5},
-    "GEHA Field at Arrowhead Stadium": {"city": "Kansas City", "country": "USA", "off": -5},
+    "Estadio Banorte": {"city": "Mexico City", "country": "Mexico", "off": -6, "alt": "Estadio Azteca", "lat": 19.3029, "lng": -99.1505},
+    "Estadio Akron": {"city": "Guadalajara", "country": "Mexico", "off": -6, "lat": 20.6819, "lng": -103.4625},
+    "Estadio BBVA": {"city": "Monterrey", "country": "Mexico", "off": -6, "lat": 25.6692, "lng": -100.2444},
+    "BMO Field": {"city": "Toronto", "country": "Canada", "off": -4, "lat": 43.6332, "lng": -79.4185},
+    "BC Place": {"city": "Vancouver", "country": "Canada", "off": -7, "lat": 49.2767, "lng": -123.1119},
+    "SoFi Stadium": {"city": "Los Angeles", "country": "USA", "off": -7, "lat": 33.9535, "lng": -118.3392},
+    "Levi's Stadium": {"city": "San Francisco Bay Area", "country": "USA", "off": -7, "lat": 37.4030, "lng": -121.9700},
+    "Lumen Field": {"city": "Seattle", "country": "USA", "off": -7, "lat": 47.5952, "lng": -122.3316},
+    "MetLife Stadium": {"city": "New York / New Jersey", "country": "USA", "off": -4, "lat": 40.8135, "lng": -74.0745},
+    "Gillette Stadium": {"city": "Boston", "country": "USA", "off": -4, "lat": 42.0909, "lng": -71.2643},
+    "Lincoln Financial Field": {"city": "Philadelphia", "country": "USA", "off": -4, "lat": 39.9008, "lng": -75.1675},
+    "Hard Rock Stadium": {"city": "Miami", "country": "USA", "off": -4, "lat": 25.9580, "lng": -80.2389},
+    "Mercedes-Benz Stadium": {"city": "Atlanta", "country": "USA", "off": -4, "lat": 33.7554, "lng": -84.4008},
+    "NRG Stadium": {"city": "Houston", "country": "USA", "off": -5, "lat": 29.6847, "lng": -95.4107},
+    "AT&T Stadium": {"city": "Dallas", "country": "USA", "off": -5, "lat": 32.7473, "lng": -97.0945},
+    "GEHA Field at Arrowhead Stadium": {"city": "Kansas City", "country": "USA", "off": -5, "lat": 39.0489, "lng": -94.4839},
 }
 
 _NORMALISE.update({"United States": "USA", "Congo DR": "DR Congo", "Cabo Verde": "Cape Verde"})

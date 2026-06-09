@@ -44,6 +44,10 @@ async function fetchMyPoints() {
 }
 
 // ================================================================ helpers
+const SHORT_NAMES = {
+  "Bosnia & Herzegovina": "Bosnia-Herz.",
+  "Korea Republic": "Korea Rep.",
+};
 function teamHTML(team) {
   if (!team) return "";
   const code = DATA.flagCodes && DATA.flagCodes[team];
@@ -53,7 +57,8 @@ function teamHTML(team) {
       `onerror="this.style.display='none'">`
     : `<span class="flag">${(DATA.flags && DATA.flags[team]) || "⚽"}</span>`;
   const c3 = (DATA.codes3 && DATA.codes3[team]) || "";
-  return `${img}<span class="tcol"><span class="tname">${team}</span>` +
+  const disp = SHORT_NAMES[team] || team;
+  return `${img}<span class="tcol"><span class="tname" title="${escapeHTML(team)}">${disp}</span>` +
          (c3 ? `<span class="tcode">${c3}</span>` : "") + `</span>`;
 }
 
@@ -142,6 +147,10 @@ async function init() {
   wireLeagues();
   wireSubToggle();
   wireLiveSubToggle();
+  document.querySelectorAll(".home-card").forEach(c => c.addEventListener("click", () => {
+    const t = document.querySelector(`.tab[data-tab="${c.dataset.goto}"]`);
+    if (t) t.click();
+  }));
   handleVerifyRedirect();
   parseJoin();
   await refreshAuth();     // loads server prediction if logged in
@@ -251,14 +260,13 @@ async function renderLive() {
       ? `<span class="locked-pick">${sc.home ?? "–"} – ${sc.away ?? "–"}</span>`
       : `<input type="number" min="0" max="99" class="live-h" value="${sc.home ?? ""}">` +
         `<span>–</span><input type="number" min="0" max="99" class="live-a" value="${sc.away ?? ""}">`;
-    html += `<div class="live-meta"><span class="when">${f.time} BST</span> ${resBadge} ${lockChip} ${pill}
-        <span class="chan ${chanClass(f.channel)}">${f.channel || ""}</span></div>
-      <div class="fixture${locked ? " locked" : ""}" data-mid="${f.id}">
-        <span class="home">${teamHTML(f.home)}</span>
-        <span class="score">${inputs}</span>
-        <span class="away">${teamHTML(f.away)}</span>
-      </div>
-      ${f.venue ? `<div class="fixture-venue">📍 ${f.venue}, ${f.city}</div>` : ""}`;
+    html += `<div class="live-meta"><span class="when">${f.time} BST${f.venue ? ` · 📍 ${f.venue}, ${f.city}` : ""}</span> ${resBadge} ${lockChip} ${pill}</div>
+      <div class="fixture-line"><span class="chan-left chan ${chanClass(f.channel)}">${f.channel || ""}</span>
+        <div class="fixture${locked ? " locked" : ""}" data-mid="${f.id}">
+          <span class="home">${teamHTML(f.home)}</span>
+          <span class="score">${inputs}</span>
+          <span class="away">${teamHTML(f.away)}</span>
+        </div></div>`;
   });
   wrap.innerHTML = html;
   wrap.querySelectorAll(".fixture:not(.locked) input").forEach(i => {
@@ -313,7 +321,8 @@ async function renderLiveKnockout() {
       const locked = LOCKS.lockedMatches.has(kid);
       const sc = LIVE_KO[kid] || {};
       const res = RESULTS[kid];
-      const when = m.date ? `${fmtDate(m.date)} · ${m.time} BST` : "";
+      const when = (m.date ? `${fmtDate(m.date)} · ${m.time} BST` : "") +
+        (m.venue ? ` · 📍 ${escapeHTML(m.venue)}, ${escapeHTML(m.city)}` : "");
       const resBadge = (res && res.home != null)
         ? `<span class="st ${res.status === "live" ? "live" : "ft"}">${res.status === "live" ? "LIVE" : "FT"} ${res.home}–${res.away}</span>` : "";
       const lockChip = locked ? `<span class="lockchip">🔒</span>` : "";
@@ -339,8 +348,7 @@ async function renderLiveKnockout() {
           <span class="score">${inputs}</span>
           <span class="away">${teamHTML(a.teamB)}</span>
         </div>
-        ${locked ? "" : `<div class="ko-pen-row">${penPicker}</div>`}
-        ${m.venue ? `<div class="fixture-venue">📍 ${escapeHTML(m.venue)}, ${escapeHTML(m.city)}</div>` : ""}`;
+        ${locked ? "" : `<div class="ko-pen-row">${penPicker}</div>`}`;
     });
   });
   wrap.innerHTML = html;
@@ -401,6 +409,26 @@ function renderMap() {
       <div class="venue-name">${name}${v.alt ? ` <span class="venue-alt">(${v.alt})</span>` : ""}</div>
       <div class="venue-meta">${v.country} · ${count[name] || 0} match${(count[name] || 0) === 1 ? "" : "es"}</div>
     </div>`).join("");
+
+  if (window.L) {
+    if (!window._venueMap) {
+      const map = window.L.map("venue-map", { scrollWheelZoom: false });
+      window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        { maxZoom: 18, attribution: "© OpenStreetMap" }).addTo(map);
+      const pts = [];
+      entries.forEach(([name, v]) => {
+        if (v.lat == null) return;
+        window.L.circleMarker([v.lat, v.lng],
+          { radius: 8, color: "#fff", weight: 2, fillColor: "#fb923c", fillOpacity: .95 })
+          .addTo(map)
+          .bindPopup(`<b>${name}</b><br>${v.city}, ${v.country}<br>${count[name] || 0} match${(count[name] || 0) === 1 ? "" : "es"}`);
+        pts.push([v.lat, v.lng]);
+      });
+      if (pts.length) map.fitBounds(pts, { padding: [34, 34] });
+      window._venueMap = map;
+    }
+    setTimeout(() => window._venueMap.invalidateSize(), 120);
+  }
 }
 
 function wireSubToggle() {
@@ -1127,11 +1155,12 @@ function renderGroups() {
       if (fx.date) {
         const meta = document.createElement("div");
         meta.className = "fixture-meta";
-        meta.innerHTML =
-          `<span class="when">${fmtDate(fx.date)} · ${fx.time} BST</span>` +
-          `<span class="chan ${chanClass(fx.channel)}">${fx.channel}</span>`;
+        meta.innerHTML = `<span class="when">${fmtDate(fx.date)} · ${fx.time} BST` +
+          (fx.venue ? ` · 📍 ${fx.venue}, ${fx.city}` : "") + `</span>`;
         fxWrap.appendChild(meta);
       }
+      const line = document.createElement("div");
+      line.className = "fixture-line";
       const row = document.createElement("div");
       row.className = "fixture";
       row.innerHTML = `
@@ -1142,14 +1171,10 @@ function renderGroups() {
           <input type="number" min="0" max="99" data-mid="${fx.id}" data-side="away" value="${sc.away ?? ""}">
         </span>
         <span class="away">${teamHTML(fx.away)}</span>`;
-      fxWrap.appendChild(row);
+      line.innerHTML = `<span class="chan-left chan ${chanClass(fx.channel)}">${fx.channel || ""}</span>`;
+      line.appendChild(row);
+      fxWrap.appendChild(line);
       markFixture(row);
-      if (fx.venue) {
-        const v = document.createElement("div");
-        v.className = "fixture-venue";
-        v.textContent = `📍 ${fx.venue}, ${fx.city}`;
-        fxWrap.appendChild(v);
-      }
     });
   });
 

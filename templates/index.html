@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>World Cup 2026 Predictor</title>
   <script>try { document.documentElement.setAttribute("data-theme", localStorage.getItem("wc2026-theme") || "dark"); } catch (e) {}</script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
@@ -30,8 +32,9 @@
   </header>
 
   <nav class="tabs">
-    <button class="tab active" data-tab="predictor">Predictor</button>
-    <button class="tab" data-tab="live">Live Picks</button>
+    <button class="tab active" data-tab="home">Home</button>
+    <button class="tab" data-tab="predictor">Predictor</button>
+    <button class="tab" data-tab="live">Rolling Picks</button>
     <button class="tab" data-tab="results">Results</button>
     <button class="tab" data-tab="map">Map</button>
     <button class="tab" data-tab="leagues">My Leagues</button>
@@ -39,8 +42,23 @@
   </nav>
 
   <main>
-    <section id="tab-predictor" class="tab-panel active">
+    <section id="tab-home" class="tab-panel active">
+      <div class="predictions-head">
+        <h2>Welcome 👋</h2>
+        <p class="hint">Predict the 2026 World Cup and climb the leaderboards with your friends. Pick a section to begin.</p>
+      </div>
+      <div class="home-grid">
+        <div class="home-card" data-goto="predictor"><h3>🔮 Predictor</h3><p>Predict every group score and build your full knockout bracket <b>before</b> the tournament. Locks at the first kick-off — this is your one-shot forecast.</p></div>
+        <div class="home-card" data-goto="live"><h3>🎯 Rolling Picks</h3><p>Predict each match right up to its kick-off — start anytime, even mid-tournament. Group stage and knockouts, each locks as it starts.</p></div>
+        <div class="home-card" data-goto="results"><h3>📊 Results</h3><p>Live &amp; final scores, goalscorers, live group tables, and the points your picks have earned per match.</p></div>
+        <div class="home-card" data-goto="map"><h3>🗺️ Map</h3><p>The 16 host stadiums across Canada, Mexico and the USA, plotted on a map.</p></div>
+        <div class="home-card" data-goto="leagues"><h3>🏆 My Leagues</h3><p>Create or join private leagues, share an invite link, brand them with a logo, and compare on three leaderboards.</p></div>
+      </div>
+    </section>
+
+    <section id="tab-predictor" class="tab-panel">
       <div id="stat-row" class="stat-row"></div>
+      <p class="hint page-help">🔮 Predict all 72 group scores, then click winners through the bracket (and the 3rd-place play-off). “Random fill” fills it instantly. Your bracket locks at the first kick-off.</p>
       <div id="predictor-lock" class="lockbar hidden"></div>
       <div class="subtoggle">
         <button class="subtab active" data-sub="groups">Group Stage</button>
@@ -68,8 +86,8 @@
 
     <section id="tab-live" class="tab-panel">
       <div class="predictions-head">
-        <h2>Live Picks</h2>
-        <p class="hint">Predict each game right up to kick-off — every match locks when it starts. This is separate from your locked Tournament bracket, so you can start anytime (great if you joined late). Saves automatically.</p>
+        <h2>Rolling Picks</h2>
+        <p class="hint">🎯 Predict each game right up to kick-off — every match locks when it starts. Separate from your locked Predictor bracket, so you can start anytime (great if you joined late). Switch between Group stage and Knockout below. Saves automatically.</p>
       </div>
       <div class="subtoggle" id="live-toggle">
         <button class="subtab active" data-livesub="group">Group stage</button>
@@ -100,8 +118,9 @@
     <section id="tab-map" class="tab-panel">
       <div class="predictions-head">
         <h2>Host venues</h2>
-        <p class="hint">16 stadiums across Canada, Mexico and the USA. Number of matches at each is shown.</p>
+        <p class="hint">🗺️ The 16 stadiums hosting World Cup 2026. Click a pin for details; cards below show how many matches each hosts.</p>
       </div>
+      <div id="venue-map" class="venue-map"></div>
       <div id="map-list" class="venue-grid"></div>
     </section>
 
