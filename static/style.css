@@ -896,13 +896,17 @@ table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .subtoggle { display: flex; width: 100%; }
   .subtab { flex: 1 1 0; padding: 10px 6px; text-align: center; }
 
-  /* league header wraps; branding stays prominent but fits the phone */
+  /* league header wraps; branding stays prominent but on ONE row (logo |
+     name | sponsors side-by-side) instead of sponsors dropping below */
   .league-detail-head { flex-wrap: wrap; gap: 8px; }
-  .league-title { gap: 14px; padding: 14px 16px; }
-  .league-title h2 { font-size: 22px; }
-  .league-logo { height: 84px; max-width: 200px; }
-  .sponsors-top { gap: 12px; padding-left: 14px; margin-left: 0; }
-  .sponsors-top img { height: 64px; max-width: 170px; }
+  .league-title { flex-wrap: nowrap; gap: 12px; padding: 12px 14px; align-items: center; }
+  .league-title h2 { font-size: 18px; flex: 1 1 auto; min-width: 0; }
+  .league-logo { height: 72px; max-width: 110px; flex: 0 0 auto; }
+  .sponsors-top {
+    flex: 0 1 auto; gap: 8px; padding-left: 10px; margin-left: 0;
+    flex-wrap: wrap; justify-content: flex-end;
+  }
+  .sponsors-top img { height: 58px; max-width: 84px; padding: 5px 7px; }
 
   /* knockout decider wraps tidily */
   .ko-decider { gap: 7px; padding: 7px 9px; }
