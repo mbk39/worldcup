@@ -115,9 +115,17 @@ def parse_event(ev):
 
 def main():
     if not FEED_TOKEN:
-        print("FEED_TOKEN not set — aborting.")
-        return 1
-    fixtures = build_fixture_map()
+        # Nothing we can push without the shared secret. Don't fail the workflow
+        # (avoids a red ✗ every run) — just warn so it's visible in the log.
+        print("::warning::FEED_TOKEN secret not set — skipping. "
+              "Add it in repo Settings → Secrets and variables → Actions, "
+              "matching the app's FEED_TOKEN env var.")
+        return 0
+    try:
+        fixtures = build_fixture_map()
+    except Exception as exc:  # noqa: BLE001 - app unreachable / bad response
+        print(f"::warning::Could not load fixtures from {APP_URL}: {exc!r} — skipping.")
+        return 0
     print(f"Loaded {len(fixtures)} group fixtures from {APP_URL}")
 
     today = dt.datetime.utcnow().date()

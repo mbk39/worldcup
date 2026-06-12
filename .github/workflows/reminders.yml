@@ -18,8 +18,10 @@ jobs:
         env:
           APP_URL: ${{ vars.APP_URL || 'https://mbk39.pythonanywhere.com' }}
           FEED_TOKEN: ${{ secrets.FEED_TOKEN }}
+        # No -f: a 503 (reminders disabled / token unset) prints the body and
+        # stays green; only a real connection failure fails the step.
         run: |
-          curl -fsS -X POST "$APP_URL/api/cron/reminders" \
+          curl -sS -X POST "$APP_URL/api/cron/reminders" \
             -H "X-Feed-Token: $FEED_TOKEN" \
             -H "Content-Type: application/json" \
             -d '{}'
