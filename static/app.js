@@ -917,8 +917,17 @@ async function openLeague(code) {
   if (edit) edit.addEventListener("click", () => openLeagueEdit(data));
 
   LEAGUE_DATA = data;
-  document.querySelectorAll("#league-tracks .subtab").forEach(b =>
-    b.onclick = () => { LEAGUE_TRACK = b.dataset.track; renderLeagueBoard(); });
+  // Only show the leaderboards this league has enabled.
+  const enabled = (data.tracks && data.tracks.length) ? data.tracks : ["tournament", "group", "knockout"];
+  let shown = 0;
+  document.querySelectorAll("#league-tracks .subtab").forEach(b => {
+    const on = enabled.includes(b.dataset.track);
+    b.classList.toggle("hidden", !on);
+    if (on) shown++;
+    b.onclick = () => { LEAGUE_TRACK = b.dataset.track; renderLeagueBoard(); };
+  });
+  document.getElementById("league-tracks").classList.toggle("hidden", shown <= 1);
+  if (!enabled.includes(LEAGUE_TRACK)) LEAGUE_TRACK = enabled[0];
   renderLeagueBoard();
 }
 
@@ -1019,20 +1028,30 @@ async function openMember(uid, name) {
   };
 
   let html = "";
-  // Tournament bracket (only revealed after the first kick-off)
+  // --- Predictor (the locked pre-tournament forecast) ---
+  const pg = Object.entries(data.predictorGroups || {});
+  html += `<div class="mp-sec"><b>Predictor — group scores</b> ${pg.length ? `<span class="hint">(${pg.length} revealed)</span>` : "<span class='hint'>— revealed as each game kicks off</span>"}</div>`;
+  pg.sort().forEach(([mid, sc]) => (html += line(mid, sc)));
   if (data.tournament) {
     const sim = (await api("POST", "/api/simulate", data.tournament)).data;
-    html += `<div class="mp-sec"><b>Pre-tournament bracket</b> — predicted champion: ` +
+    html += `<div class="mp-sec"><b>Predictor — knockout bracket</b> · predicted champion: ` +
       `${sim.champion ? teamHTML(sim.champion) : "—"}</div>`;
+    (sim.bracket ? Object.entries(sim.bracket) : [])
+      .filter(([, m]) => m.winner)
+      .sort((x, y) => +x[0] - +y[0])
+      .forEach(([mid, m]) => {
+        html += `<div class="mp-row"><span class="hint">M${mid}</span> ${teamHTML(m.teamA)} v ${teamHTML(m.teamB)} → <b>${teamHTML(m.winner)}</b></div>`;
+      });
   } else {
-    html += `<div class="mp-sec">🔒 Pre-tournament bracket hidden until the tournament starts.</div>`;
+    html += `<div class="mp-sec">🔒 <span class="hint">Knockout bracket hidden until predictions lock (end of Matchday 1).</span></div>`;
   }
+  // --- Rolling picks ---
   const grp = Object.entries(data.group || {});
   html += `<div class="mp-sec"><b>Rolling group picks</b> ${grp.length ? "" : "<span class='hint'>— none revealed yet (matches reveal as they kick off)</span>"}</div>`;
   grp.sort().forEach(([mid, sc]) => (html += line(mid, sc)));
   const ko = Object.entries(data.knockout || {});
   if (ko.length) {
-    html += `<div class="mp-sec"><b>Knockout picks</b></div>`;
+    html += `<div class="mp-sec"><b>Rolling knockout picks</b></div>`;
     ko.sort((x, y) => +x[0].slice(2) - +y[0].slice(2)).forEach(([mid, sc]) => (html += line(mid, sc)));
   }
 
@@ -1213,19 +1232,58 @@ async function adminDeleteLeague(code) {
   renderAdminLeagues();
 }
 
+const TRACK_OPTS = [
+  { id: "tournament", label: "Pre-tournament" },
+  { id: "group", label: "Rolling" },
+  { id: "knockout", label: "Knockout" },
+];
 async function adminViewMembers(code, name) {
   const { ok, data } = await api("GET", "/api/admin/leagues/" + encodeURIComponent(code));
   if (!ok) { alert(data.error || "Could not load members."); return; }
   document.getElementById("admin-members").classList.remove("hidden");
-  document.getElementById("admin-members-title").textContent = `Members of ${name} (${code})`;
-  const list = document.getElementById("admin-members-list");
-  if (!data.members.length) { list.innerHTML = `<div class="hint">No members.</div>`; return; }
-  list.innerHTML = data.members.map(m =>
-    `<div class="admin-member-row">
-       <span>${escapeHTML(m.displayName)}${m.summary ? ` — champion: ${m.summary.champion || "—"}, ${m.summary.predicted || 0}/72` : " — no prediction"}</span>
-       <button class="btn ghost small danger" data-uid="${m.userId}">Remove</button>
-     </div>`).join("");
-  list.querySelectorAll("button[data-uid]").forEach(b => b.addEventListener("click", async () => {
+  document.getElementById("admin-members-title").textContent = `${name} (${code})`;
+  const wrap = document.getElementById("admin-members-list");
+  const tracks = data.tracks || ["tournament", "group", "knockout"];
+
+  const tracksHtml =
+    `<div class="admin-sub">Leaderboards shown to this league</div>
+     <div class="admin-tracks">${TRACK_OPTS.map(o =>
+        `<label><input type="checkbox" value="${o.id}" ${tracks.includes(o.id) ? "checked" : ""}> ${o.label}</label>`
+      ).join("")}<button class="btn ghost small" id="save-tracks">Save leaderboards</button></div>`;
+
+  const addHtml =
+    `<div class="admin-sub">Add a member by email</div>
+     <div class="admin-addmember">
+       <input id="add-member-email" class="name-input" type="email" placeholder="user@email.com">
+       <button class="btn ghost small" id="add-member-btn">Add to league</button>
+     </div>`;
+
+  const membersHtml = data.members.length
+    ? data.members.map(m =>
+        `<div class="admin-member-row">
+           <span>${escapeHTML(m.displayName)}${m.summary ? ` — champion: ${m.summary.champion || "—"}, ${m.summary.predicted || 0}/72` : ""}</span>
+           <button class="btn ghost small danger" data-uid="${m.userId}">Remove</button>
+         </div>`).join("")
+    : `<div class="hint">No members yet.</div>`;
+
+  wrap.innerHTML = tracksHtml + addHtml +
+    `<div class="admin-sub">Members (${data.members.length})</div>` + membersHtml;
+
+  document.getElementById("save-tracks").addEventListener("click", async () => {
+    const picked = [...wrap.querySelectorAll(".admin-tracks input:checked")].map(i => i.value);
+    const r = await api("POST", `/api/admin/leagues/${encodeURIComponent(code)}/tracks`, { tracks: picked });
+    alert(r.ok ? "Leaderboards updated." : (r.data.error || "Failed."));
+  });
+  document.getElementById("add-member-btn").addEventListener("click", async () => {
+    const email = document.getElementById("add-member-email").value.trim();
+    if (!email) return;
+    const r = await api("POST", `/api/admin/leagues/${encodeURIComponent(code)}/add-member`, { email });
+    if (!r.ok) { alert(r.data.error || "Failed."); return; }
+    alert(`Added ${r.data.displayName} to the league.`);
+    adminViewMembers(code, name);
+    renderAdminLeagues();
+  });
+  wrap.querySelectorAll("button[data-uid]").forEach(b => b.addEventListener("click", async () => {
     if (!confirm("Remove this member from the league?")) return;
     const r = await api("POST", `/api/admin/leagues/${encodeURIComponent(code)}/remove-member`, { userId: +b.dataset.uid });
     if (!r.ok) { alert(r.data.error || "Failed."); return; }
@@ -1238,14 +1296,33 @@ async function renderAdminUsers() {
   const { ok, data } = await api("GET", "/api/admin/users");
   const t = document.getElementById("admin-users");
   if (!ok) { t.innerHTML = ""; return; }
-  let html = `<tr><th>Name</th><th>Email</th><th>Verified</th><th>Leagues</th><th>Prediction</th><th>Actions</th></tr>`;
+  const GTOT = (DATA?.fixtures || []).length || 72;
+  const BTOT = (DATA?.bracket || []).reduce((n, r) => n + r.matches.length, 0) || 32;
+  const cell = (n, tot) => {
+    const cls = n >= tot ? "kpi-ok" : (n > 0 ? "kpi-part" : "kpi-none");
+    return `<td class="kpi ${cls}">${n}/${tot}</td>`;
+  };
+  // headline counts
+  const fullPredictor = data.filter(u => u.group_preds >= GTOT && u.bracket_preds >= BTOT).length;
+  const anyRolling = data.filter(u => u.rolling_preds > 0).length;
+  document.getElementById("admin-users-kpi").innerHTML =
+    `<span><b>${data.length}</b> users</span> · ` +
+    `<span><b>${data.filter(u => u.verified).length}</b> verified</span> · ` +
+    `<span><b>${fullPredictor}</b> completed the predictor</span> · ` +
+    `<span><b>${anyRolling}</b> started rolling picks</span>`;
+  let html = `<tr><th>Name</th><th>Email</th><th>Verified</th><th>Leagues</th>` +
+    `<th title="Group scores filled">Groups</th><th title="Knockout bracket winners picked">Bracket</th>` +
+    `<th title="Rolling group picks">Rolling</th><th title="Rolling knockout picks">KO</th><th>Actions</th></tr>`;
   data.forEach(u => {
     html += `<tr>
       <td>${escapeHTML(u.display_name)}</td>
       <td>${escapeHTML(u.email)}</td>
       <td>${u.verified ? "✅" : "❌"}</td>
       <td>${u.leagues}</td>
-      <td>${u.has_pred ? "yes" : "—"}</td>
+      ${cell(u.group_preds || 0, GTOT)}
+      ${cell(u.bracket_preds || 0, BTOT)}
+      <td class="kpi ${u.rolling_preds ? "kpi-part" : "kpi-none"}">${u.rolling_preds || 0}</td>
+      <td class="kpi ${u.ko_preds ? "kpi-part" : "kpi-none"}">${u.ko_preds || 0}</td>
       <td class="actions">
         ${u.verified ? "" : `<button class="btn ghost small" data-act="verify" data-id="${u.id}">Verify</button>
         <button class="btn ghost small" data-act="resend" data-id="${u.id}">✉️ Resend verify</button>`}

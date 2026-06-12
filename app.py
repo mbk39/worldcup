@@ -665,6 +665,18 @@ def api_cron_reminders():
 
 
 # --------------------------------------------------------------- leagues
+_ALLOWED_TRACKS = ("tournament", "group", "knockout")
+
+
+def _league_tracks(lg):
+    try:
+        tracks = json.loads(lg["tracks"] or "[]")
+    except (TypeError, ValueError, KeyError):
+        tracks = []
+    tracks = [t for t in tracks if t in _ALLOWED_TRACKS]
+    return tracks or list(_ALLOWED_TRACKS)
+
+
 def _league_public(lg, user_id):
     return {"code": lg["code"], "name": lg["name"],
             "members": lg.get("members"),
@@ -733,6 +745,7 @@ def api_league_detail(user, code):
         "isOwner": lg["owner_id"] == user["id"],
         "logo": lg["logo"] or "",
         "sponsors": json.loads(lg["sponsors"] or "[]"),
+        "tracks": _league_tracks(lg),
         "members": members,
         "resultsScored": group_done,
         "knockoutReady": group_done >= len(_FIXTURE_IDS),
@@ -779,16 +792,21 @@ def api_league_member(user, code, uid):
         return jsonify({"error": "Not found."}), 404
 
     locked = _locked_match_ids()
-    # Tournament bracket only becomes visible once it locks (first kick-off).
-    tournament = None
-    if _tournament_locked():
-        rec = db.get_prediction(uid)
-        tournament = rec["state"] if rec else {"groupScores": {}, "koPicks": {}}
-    # Per-match picks only visible for matches that have kicked off.
+    rec = db.get_prediction(uid)
+    pred = rec["state"] if rec else {}
+    pred_gs = pred.get("groupScores") or {}
+    pred_ko = pred.get("koPicks") or {}
+    # Predictor group scores reveal per kick-off (the fixture is locked anyway);
+    # the full bracket reveals only once the predictor hard-locks (end of MD1).
+    predictor_groups = {mid: sc for mid, sc in pred_gs.items() if mid in locked}
+    tournament = {"groupScores": pred_gs, "koPicks": pred_ko} if _tournament_locked() else None
+    # Rolling per-match picks only visible for matches that have kicked off.
     group = {mid: sc for mid, sc in db.get_live(uid).items() if mid in locked}
     knockout = {mid: sc for mid, sc in db.get_live_ko(uid).items() if mid in locked}
     return jsonify({"displayName": target["display_name"], "isYou": uid == user["id"],
-                    "tournament": tournament, "group": group, "knockout": knockout})
+                    "predictorGroups": predictor_groups, "tournament": tournament,
+                    "bracketLocked": _tournament_locked(),
+                    "group": group, "knockout": knockout})
 
 
 @app.route("/api/leagues/<code>/leave", methods=["POST"])
@@ -829,7 +847,38 @@ def api_admin_league_detail(user, code):
     if not lg:
         return jsonify({"error": "Not found."}), 404
     return jsonify({"code": lg["code"], "name": lg["name"],
+                    "tracks": _league_tracks(lg),
                     "members": db.league_members(lg["id"])})
+
+
+@app.route("/api/admin/leagues/<code>/add-member", methods=["POST"])
+@admin_required
+def api_admin_add_member(user, code):
+    lg = db.get_league_by_code(code)
+    if not lg:
+        return jsonify({"error": "Not found."}), 404
+    email = ((request.get_json(force=True, silent=True) or {}).get("email") or "").strip().lower()
+    target = db.get_user_by_email(email)
+    if not target:
+        return jsonify({"error": "No user with that email address."}), 404
+    if db.is_member(lg["id"], target["id"]):
+        return jsonify({"error": f"{target['display_name']} is already in this league."}), 400
+    db.add_member(lg["id"], target["id"], int(time.time()))
+    return jsonify({"ok": True, "displayName": target["display_name"]})
+
+
+@app.route("/api/admin/leagues/<code>/tracks", methods=["POST"])
+@admin_required
+def api_admin_set_tracks(user, code):
+    lg = db.get_league_by_code(code)
+    if not lg:
+        return jsonify({"error": "Not found."}), 404
+    wanted = (request.get_json(force=True, silent=True) or {}).get("tracks") or []
+    tracks = [t for t in _ALLOWED_TRACKS if t in wanted]   # keep canonical order
+    if not tracks:
+        return jsonify({"error": "Pick at least one leaderboard."}), 400
+    db.set_league_tracks(lg["code"], json.dumps(tracks))
+    return jsonify({"ok": True, "tracks": tracks})
 
 
 @app.route("/api/admin/leagues/<code>", methods=["PATCH"])

@@ -50,7 +50,8 @@ def init_db():
                 owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 created  INTEGER NOT NULL,
                 logo     TEXT NOT NULL DEFAULT '',
-                sponsors TEXT NOT NULL DEFAULT '[]'
+                sponsors TEXT NOT NULL DEFAULT '[]',
+                tracks   TEXT NOT NULL DEFAULT '["tournament","group","knockout"]'
             );
 
             CREATE TABLE IF NOT EXISTS league_members (
@@ -96,6 +97,9 @@ def init_db():
             conn.execute("ALTER TABLE leagues ADD COLUMN logo TEXT NOT NULL DEFAULT ''")
         if "sponsors" not in lcols:
             conn.execute("ALTER TABLE leagues ADD COLUMN sponsors TEXT NOT NULL DEFAULT '[]'")
+        if "tracks" not in lcols:
+            conn.execute("ALTER TABLE leagues ADD COLUMN tracks TEXT NOT NULL "
+                         "DEFAULT '[\"tournament\",\"group\",\"knockout\"]'")
 
 
 # --------------------------------------------------------------- users
@@ -247,6 +251,11 @@ def update_league_branding(code, name, logo, sponsors_json):
                      (name, logo, sponsors_json, code.upper()))
 
 
+def set_league_tracks(code, tracks_json):
+    with _lock, _conn() as conn:
+        conn.execute("UPDATE leagues SET tracks=? WHERE code=?", (tracks_json, code.upper()))
+
+
 # --------------------------------------------------------------- admin
 def list_all_leagues():
     with _conn() as conn:
@@ -261,14 +270,38 @@ def list_all_leagues():
 
 
 def list_all_users():
+    """Every user with completion KPIs across all three prediction stores."""
     with _conn() as conn:
         rows = conn.execute(
             """SELECT u.id, u.email, u.display_name, u.verified, u.created,
                       (SELECT COUNT(*) FROM league_members m WHERE m.user_id=u.id) AS leagues,
-                      (SELECT COUNT(*) FROM predictions p WHERE p.user_id=u.id) AS has_pred
-               FROM users u ORDER BY u.created DESC"""
+                      p.state  AS _pred,
+                      lv.scores AS _live,
+                      lk.scores AS _ko
+               FROM users u
+               LEFT JOIN predictions p        ON p.user_id  = u.id
+               LEFT JOIN live_predictions lv   ON lv.user_id = u.id
+               LEFT JOIN live_ko_predictions lk ON lk.user_id = u.id
+               ORDER BY u.created DESC"""
         ).fetchall()
-    return [dict(r) for r in rows]
+    out = []
+    for r in rows:
+        d = dict(r)
+        st = json.loads(d.pop("_pred") or "{}") or {}
+        gs = st.get("groupScores") or {}
+        ko = st.get("koPicks") or {}
+        live = json.loads(d.pop("_live") or "{}") or {}
+        livek = json.loads(d.pop("_ko") or "{}") or {}
+        d["group_preds"] = sum(
+            1 for v in gs.values()
+            if isinstance(v, dict) and v.get("home") is not None and v.get("away") is not None
+        )
+        d["bracket_preds"] = len(ko)
+        d["rolling_preds"] = sum(1 for v in live.values() if v)
+        d["ko_preds"] = sum(1 for v in livek.values() if v)
+        d["has_pred"] = bool(gs or ko)
+        out.append(d)
+    return out
 
 
 def set_verified(user_id):
