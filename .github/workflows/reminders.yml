@@ -1,0 +1,25 @@
+name: Send reminder emails
+
+# Calls the app's reminder endpoint once an hour. The endpoint decides whether
+# anything is due (daily Rolling-Picks nudge ~1h before the first game, plus
+# Matchday-1 deadline reminders) and dedupes so each fires at most once.
+# PythonAnywhere's free tier only allows one scheduled task/day, so the cadence
+# lives here in GitHub Actions instead.
+on:
+  schedule:
+    - cron: "5 * * * *"   # hourly, at :05
+  workflow_dispatch:
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger reminders
+        env:
+          APP_URL: ${{ vars.APP_URL || 'https://mbk39.pythonanywhere.com' }}
+          FEED_TOKEN: ${{ secrets.FEED_TOKEN }}
+        run: |
+          curl -fsS -X POST "$APP_URL/api/cron/reminders" \
+            -H "X-Feed-Token: $FEED_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{}'

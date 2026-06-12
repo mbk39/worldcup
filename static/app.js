@@ -154,6 +154,7 @@ async function init() {
   handleVerifyRedirect();
   parseJoin();
   await refreshAuth();     // loads server prediction if logged in
+  if (currentUser) await refreshLeagues();   // My Leagues is the default tab
   await fetchLive();
   await fetchResults();
   await fetchMyPoints();
@@ -217,15 +218,18 @@ function lockTimeText() {
 
 function applyTournamentLock() {
   const bar = document.getElementById("predictor-lock");
-  const locked = LOCKS.tournamentLocked;
+  const locked = LOCKS.tournamentLocked;   // hard deadline: end of Matchday 1
   if (bar) {
     bar.classList.remove("hidden");
     bar.className = "lockbar" + (locked ? " locked" : "");
     bar.innerHTML = locked
-      ? "🔒 Tournament predictions are locked — the tournament has started. Use <b>Live Picks</b> to keep predicting upcoming games."
-      : `🔓 Your Tournament bracket locks at the first kick-off — <b>${lockTimeText()}</b>. After that, use <b>Live Picks</b> for the rest of the tournament.`;
+      ? "🔒 Predictions are locked — Matchday 1 is over. Use <b>Rolling Picks</b> to keep predicting upcoming games."
+      : `🔓 Each game locks at its own kick-off, so you can still edit fixtures that haven't started — and your knockout bracket — right up to the <b>end of Matchday 1</b> (${lockTimeText()}). After that it's locked. Keep going in <b>Rolling Picks</b> all tournament.`;
   }
-  document.querySelectorAll("#groups-grid input").forEach(i => (i.disabled = locked));
+  // Per-fixture locking: once everything is locked, disable all; otherwise only
+  // disable inputs for games that have already kicked off.
+  document.querySelectorAll("#groups-grid input").forEach(i =>
+    (i.disabled = locked || LOCKS.lockedMatches.has(i.dataset.mid)));
   const sb = document.getElementById("save-btn");
   if (sb) sb.style.display = locked ? "none" : "";
 }
@@ -621,8 +625,9 @@ function wireMoreMenu() {
 const _rnd = n => Math.floor(Math.random() * n);
 
 async function randomFill(includeBracket) {
-  if (LOCKS.tournamentLocked) { alert("Predictions are locked — the tournament has started."); return; }
+  if (LOCKS.tournamentLocked) { alert("Predictions are locked — Matchday 1 is over."); return; }
   DATA.fixtures.forEach(f => {
+    if (LOCKS.lockedMatches.has(f.id)) return;   // don't overwrite kicked-off games
     state.groupScores[f.id] = { home: _rnd(4), away: _rnd(4) };
   });
   if (includeBracket) {
@@ -1242,13 +1247,15 @@ async function renderAdminUsers() {
       <td>${u.leagues}</td>
       <td>${u.has_pred ? "yes" : "—"}</td>
       <td class="actions">
-        ${u.verified ? "" : `<button class="btn ghost small" data-act="verify" data-id="${u.id}">Verify</button>`}
+        ${u.verified ? "" : `<button class="btn ghost small" data-act="verify" data-id="${u.id}">Verify</button>
+        <button class="btn ghost small" data-act="resend" data-id="${u.id}">✉️ Resend verify</button>`}
         <button class="btn ghost small danger" data-act="del" data-id="${u.id}" data-name="${escapeHTML(u.display_name)}">Delete</button>
       </td></tr>`;
   });
   t.innerHTML = html;
   t.querySelectorAll("button[data-act]").forEach(b => b.addEventListener("click", () => {
     if (b.dataset.act === "verify") adminVerifyUser(b.dataset.id);
+    else if (b.dataset.act === "resend") adminResendVerification(b.dataset.id);
     else adminDeleteUser(b.dataset.id, b.dataset.name);
   }));
 }
@@ -1256,6 +1263,10 @@ async function adminVerifyUser(id) {
   const { ok, data } = await api("POST", `/api/admin/users/${id}/verify`);
   if (!ok) { alert(data.error || "Failed."); return; }
   renderAdminUsers();
+}
+async function adminResendVerification(id) {
+  const { ok, data } = await api("POST", `/api/admin/users/${id}/resend-verification`);
+  alert(ok ? (data.message || "Verification email re-sent.") : (data.error || "Failed."));
 }
 async function adminDeleteUser(id, name) {
   if (!confirm(`Delete user "${name}"? This removes their account, prediction, and any leagues they own.`)) return;
@@ -1293,12 +1304,14 @@ function renderGroups() {
       }
       const sc = state.groupScores[fx.id] || {};
       const venueTip = fx.venue ? `${fx.venue}, ${fx.city}` : "";
+      const fxLocked = LOCKS.lockedMatches.has(fx.id);
       const meta = document.createElement("div");
       meta.className = "fixture-meta";
       meta.innerHTML =
         (fx.channel ? `<span class="chan-meta chan ${chanClass(fx.channel)}">${fx.channel}</span>` : "") +
         (fx.date ? `<span class="when">${fmtDate(fx.date)} · ${fx.time} BST</span>` : "") +
-        (venueTip ? `<span class="loc-hint" title="${escapeHTML(venueTip)}">📍 venue</span>` : "");
+        (venueTip ? `<span class="loc-hint" title="${escapeHTML(venueTip)}">📍 venue</span>` : "") +
+        (fxLocked ? `<span class="lockchip" title="Kicked off — locked">🔒</span>` : "");
       if (meta.innerHTML) fxWrap.appendChild(meta);
       const row = document.createElement("div");
       row.className = "fixture";
@@ -1327,6 +1340,7 @@ function renderGroups() {
 function onScoreInput(e) {
   if (LOCKS.tournamentLocked) return;
   const inp = e.target;
+  if (LOCKS.lockedMatches.has(inp.dataset.mid)) return;   // this fixture kicked off
   const mid = inp.dataset.mid, side = inp.dataset.side;
   const sc = state.groupScores[mid] || {};
   const v = inp.value === "" ? null : Math.max(0, parseInt(inp.value, 10));

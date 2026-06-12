@@ -75,11 +75,18 @@ _KICKOFFS = {f["id"]: _kickoff_epoch(f["date"], f["time"])
              for f in _GROUP_FIXTURES if f.get("date") and f.get("time")}
 for _num, _raw in schedule.KO_KICKOFFS_UTC.items():
     _KICKOFFS[f"K-{_num}"] = schedule.ko_info(_num)["epoch"]
-# Tournament bracket locks at the first match overall (the opening group game).
-_TOURNAMENT_LOCK = min(
-    f["id"] and _kickoff_epoch(f["date"], f["time"])
-    for f in _GROUP_FIXTURES if f.get("date") and f.get("time")
+# Predictions now lock fixture-by-fixture at each kick-off, with a single hard
+# deadline: the end of Matchday 1 (the last group-stage round-1 game finishing,
+# ≈ 2h after its kick-off). Until then, fixtures that haven't kicked off — and
+# the knockout bracket — stay editable so latecomers can still play.
+_MD1_LAST_KICKOFF = max(
+    (_kickoff_epoch(f["date"], f["time"])
+     for f in _GROUP_FIXTURES
+     if f.get("matchday") == 1 and f.get("date") and f.get("time")),
+    default=min(_kickoff_epoch(f["date"], f["time"])
+                for f in _GROUP_FIXTURES if f.get("date") and f.get("time")),
 )
+_TOURNAMENT_LOCK = _MD1_LAST_KICKOFF + 2 * 3600   # last MD1 game has finished
 
 
 def _now():
@@ -411,16 +418,32 @@ def api_get_prediction(user):
 @login_required
 def api_save_prediction(user):
     if _tournament_locked():
-        return jsonify({"error": "Tournament predictions locked — the tournament has started."}), 403
+        return jsonify({"error": "Predictions are locked — Matchday 1 is over."}), 403
     body = request.get_json(force=True, silent=True) or {}
     state = body.get("state") or {}
-    clean = {
-        "groupScores": state.get("groupScores", {}) or {},
-        "koPicks": state.get("koPicks", {}) or {},
-    }
+    incoming_gs = state.get("groupScores", {}) or {}
+    incoming_ko = state.get("koPicks", {}) or {}
+
+    # Preserve picks for any group fixture that has already kicked off — those are
+    # locked and must never be overwritten (or wiped) by a later save.
+    locked = _locked_match_ids()
+    prev = (db.get_prediction(user["id"]) or {}).get("state") or {}
+    prev_gs = prev.get("groupScores", {}) or {}
+    merged_gs = {}
+    for mid in set(incoming_gs) | set(prev_gs):
+        if mid in locked:
+            # Kicked off: keep any pick saved before lock; never accept a new/changed one.
+            if mid in prev_gs:
+                merged_gs[mid] = prev_gs[mid]
+        elif mid in incoming_gs:
+            merged_gs[mid] = incoming_gs[mid]
+        elif mid in prev_gs:
+            merged_gs[mid] = prev_gs[mid]
+
+    clean = {"groupScores": merged_gs, "koPicks": incoming_ko}
     summary = _summarize(clean)
     db.save_prediction(user["id"], clean, summary, int(time.time()))
-    return jsonify({"ok": True, "summary": summary})
+    return jsonify({"ok": True, "summary": summary, "state": clean})
 
 
 # --------------------------------------------------------------- results & points
@@ -552,6 +575,93 @@ def api_feed_results():
                          status, _clean_scorers(it.get("scorers")), now)
         updated += 1
     return jsonify({"ok": True, "updated": updated})
+
+
+# --------------------------------------------------------------- reminder emails
+def _bst_date(epoch):
+    return datetime.datetime.fromtimestamp(epoch, _BST).strftime("%Y-%m-%d")
+
+
+def _fmt_bst(epoch):
+    return datetime.datetime.fromtimestamp(epoch, _BST).strftime("%a %d %b, %H:%M") + " BST"
+
+
+@app.route("/api/cron/reminders", methods=["POST"])
+def api_cron_reminders():
+    """Hit hourly by an external scheduler (GitHub Actions). Sends the daily
+    Rolling-Picks nudge ~1h before the day's first kick-off, plus deadline
+    reminders before Matchday 1 locks. Token-auth via X-Feed-Token; each
+    reminder is sent at most once (deduped in reminder_log)."""
+    if not _FEED_TOKEN:
+        return jsonify({"error": "Reminders disabled (no FEED_TOKEN configured)."}), 503
+    token = request.headers.get("X-Feed-Token", "")
+    if not secrets.compare_digest(token, _FEED_TOKEN):
+        return jsonify({"error": "Invalid feed token."}), 403
+
+    now = _now()
+    app_url = request.host_url.rstrip("/")
+    recipients = db.list_verified_users()
+    out = {"now": now, "configured": emailer.is_configured(),
+           "recipients": len(recipients), "fired": []}
+
+    def fire(key, subject, intro_html, intro_text):
+        if db.reminder_sent(key):
+            return 0
+        def mk_text(name):
+            return (f"Hi {name},\n\n{intro_text}\n\n"
+                    f"Open the predictor: {app_url}\n\n— World Cup 2026 Predictor\n")
+        def mk_html(name):
+            return (
+                '<div style="font-family:Segoe UI,Arial,sans-serif;font-size:15px;color:#1a2231">'
+                f"<p>Hi {name},</p>{intro_html}"
+                f'<p><a href="{app_url}" style="background:#fb923c;color:#2b1500;'
+                'padding:11px 20px;border-radius:9px;text-decoration:none;font-weight:700">'
+                "Make your picks</a></p>"
+                '<p style="color:#9aa;font-size:12px">World Cup 2026 Predictor</p></div>'
+            )
+        n = emailer.send_bulk(recipients, subject, mk_text, mk_html)
+        if n > 0:
+            db.mark_reminder_sent(key, now)
+            out["fired"].append({"key": key, "sent": n})
+        return n
+
+    # 1) Daily Rolling-Picks reminder — fire within the hour before the day's
+    #    first kick-off (any match: group or knockout).
+    today = _bst_date(now)
+    todays_kos = [ko for ko in _KICKOFFS.values() if _bst_date(ko) == today]
+    first = min(todays_kos) if todays_kos else None
+    if first and (first - 3600) <= now < first:
+        fire(
+            f"rolling:{today}",
+            "⏰ Today's games — get your Rolling Picks in",
+            f"<p>⚽ The first game today kicks off at <b>{_fmt_bst(first)}</b>.</p>"
+            "<p>Pop in your <b>Rolling Picks</b> before each match — every game locks at its own kick-off.</p>",
+            f"The first game today kicks off at {_fmt_bst(first)}. "
+            "Get your Rolling Picks in before each match — every game locks at kick-off.",
+        )
+
+    # 2) Deadline reminders before Matchday 1 locks the main predictor.
+    lock = _TOURNAMENT_LOCK
+    if (lock - 24 * 3600) <= now < (lock - 3600):
+        fire(
+            "deadline:24h",
+            "📋 24 hours left to set your World Cup predictions",
+            f"<p>Your main predictor (group scores + knockout bracket) locks when "
+            f"<b>Matchday 1 ends</b> — about <b>{_fmt_bst(lock)}</b>.</p>"
+            "<p>You've got ~24 hours left to get them in.</p>",
+            f"Your main predictor locks when Matchday 1 ends (~{_fmt_bst(lock)}). "
+            "About 24 hours left.",
+        )
+    elif (lock - 3600) <= now < lock:
+        fire(
+            "deadline:1h",
+            "🚨 Last hour to set your World Cup predictions",
+            f"<p>Final call — your main predictor locks at the end of Matchday 1, "
+            f"around <b>{_fmt_bst(lock)}</b>. Get your picks in now!</p>",
+            f"Final call — your main predictor locks around {_fmt_bst(lock)}.",
+        )
+
+    return jsonify({"ok": True, **out})
 
 
 # --------------------------------------------------------------- leagues
@@ -812,6 +922,27 @@ def api_admin_verify_user(user, uid):
         return jsonify({"error": "Not found."}), 404
     db.set_verified(uid)
     return jsonify({"ok": True})
+
+
+@app.route("/api/admin/users/<int:uid>/resend-verification", methods=["POST"])
+@admin_required
+def api_admin_resend_verification(user, uid):
+    target = db.get_user_by_id(uid)
+    if not target:
+        return jsonify({"error": "Not found."}), 404
+    if target["verified"]:
+        return jsonify({"error": "That account is already verified."}), 400
+    token = secrets.token_urlsafe(24)
+    db.set_verify_token(uid, token)
+    verify_url = url_for("verify_email", token=token, _external=True)
+    if not emailer.is_configured():
+        return jsonify({"ok": True, "sent": False,
+                        "message": "Email isn't configured — confirmation link logged to the server console.",
+                        "verifyUrl": verify_url})
+    sent = emailer.send_verification(target["email"], target["display_name"], verify_url)
+    return jsonify({"ok": True, "sent": bool(sent),
+                    "message": "Verification email re-sent." if sent
+                               else "Could not send — check SMTP settings / server log."})
 
 
 @app.route("/api/admin/users/<int:uid>", methods=["DELETE"])

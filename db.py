@@ -81,6 +81,11 @@ def init_db():
                 winner   TEXT,                                -- knockout advancer (esp. on penalties)
                 updated  INTEGER NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS reminder_log (
+                key   TEXT PRIMARY KEY,   -- e.g. 'rolling:2026-06-13', 'deadline:1h'
+                sent  INTEGER NOT NULL
+            );
             """
         )
         cols = [r["name"] for r in conn.execute("PRAGMA table_info(results)")]
@@ -269,6 +274,36 @@ def list_all_users():
 def set_verified(user_id):
     with _lock, _conn() as conn:
         conn.execute("UPDATE users SET verified=1, verify_token=NULL WHERE id=?", (user_id,))
+
+
+def set_verify_token(user_id, token):
+    """Issue a fresh verification token (used to re-send a confirmation email)."""
+    with _lock, _conn() as conn:
+        conn.execute("UPDATE users SET verify_token=? WHERE id=?", (token, user_id))
+
+
+def list_verified_users():
+    """Email + name for every confirmed account (for reminder emails)."""
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT id, email, display_name FROM users WHERE verified=1"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+# --------------------------------------------------------------- reminder dedupe
+def reminder_sent(key):
+    with _conn() as conn:
+        return conn.execute(
+            "SELECT 1 FROM reminder_log WHERE key=?", (key,)
+        ).fetchone() is not None
+
+
+def mark_reminder_sent(key, when):
+    with _lock, _conn() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO reminder_log(key, sent) VALUES(?,?)", (key, when)
+        )
 
 
 def delete_user(user_id):

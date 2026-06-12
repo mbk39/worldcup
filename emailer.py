@@ -26,6 +26,66 @@ def is_configured():
                 and os.environ.get("SMTP_PASS"))
 
 
+def _open_smtp():
+    """Open and authenticate one SMTP connection. Caller must close it."""
+    host = os.environ["SMTP_HOST"]
+    port = int(os.environ.get("SMTP_PORT", "587"))
+    user = os.environ["SMTP_USER"]
+    password = os.environ["SMTP_PASS"]
+    if port == 465:
+        s = smtplib.SMTP_SSL(host, port, context=ssl.create_default_context(), timeout=20)
+    else:
+        s = smtplib.SMTP(host, port, timeout=20)
+        s.starttls(context=ssl.create_default_context())
+    s.login(user, password)
+    return s
+
+
+def send_bulk(recipients, subject, make_text, make_html):
+    """Send a personalised email to many recipients over ONE connection.
+
+    recipients : list of dicts with 'email' and 'display_name'.
+    make_text / make_html : fn(display_name) -> str.
+    Returns the number of messages successfully sent (0 if SMTP not configured —
+    in dev mode the intended sends are logged instead).
+    """
+    if not recipients:
+        return 0
+    if not is_configured():
+        for r in recipients:
+            print(f"[emailer] (dev) would send '{subject}' to {r['email']}")
+        return 0
+
+    from_email = os.environ.get("FROM_EMAIL", os.environ["SMTP_USER"])
+    from_name = os.environ.get("FROM_NAME", "World Cup Predictor")
+    sent = 0
+    server = None
+    try:
+        server = _open_smtp()
+        for r in recipients:
+            name = r.get("display_name") or "there"
+            msg = EmailMessage()
+            msg["Subject"] = subject
+            msg["From"] = f"{from_name} <{from_email}>"
+            msg["To"] = r["email"]
+            msg.set_content(make_text(name))
+            msg.add_alternative(make_html(name), subtype="html")
+            try:
+                server.send_message(msg)
+                sent += 1
+            except Exception as exc:  # noqa: BLE001 - skip a bad address, keep going
+                print(f"[emailer] send to {r['email']} failed: {exc!r}")
+    except Exception as exc:  # noqa: BLE001 - connection/login failure
+        print(f"[emailer] bulk send failed: {exc!r}")
+    finally:
+        if server is not None:
+            try:
+                server.quit()
+            except Exception:  # noqa: BLE001
+                pass
+    return sent
+
+
 def send_verification(to_email, display_name, verify_url):
     """Send the verification email. Returns True on success.
 
