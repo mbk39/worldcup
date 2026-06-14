@@ -1,10 +1,13 @@
 name: Feed live results
 
 # Pulls live/final WC scores from ESPN and pushes them into the app.
-# Runs every ~10 minutes (GitHub may delay scheduled runs), plus on demand.
+# Target cadence ~10 min. NOTE: GitHub runs scheduled jobs on a best-effort
+# basis and heavily delays/drops them at the top of the hour, so we schedule on
+# odd minutes (…3, …13, …) to dodge the :00 congestion spike. Use the
+# "Run workflow" button (workflow_dispatch) for an instant manual update.
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "3,13,23,33,43,53 * * * *"
   workflow_dispatch:
 
 # Run the bundled JS actions (checkout/setup-python) on Node 24 to silence the
