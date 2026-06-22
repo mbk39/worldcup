@@ -791,6 +791,10 @@ def api_league_member(user, code, uid):
     if not target:
         return jsonify({"error": "Not found."}), 404
 
+    # You can always see your OWN full picks; other members' picks reveal only
+    # per kick-off (and their bracket only at the Matchday-1 lock) so nobody can
+    # copy an upcoming prediction.
+    is_self = uid == user["id"]
     locked = _locked_match_ids()
     results = db.get_all_results()
     rec = db.get_prediction(uid)
@@ -811,10 +815,10 @@ def api_league_member(user, code, uid):
         return None
 
     def _rows(scores, pts_map):
-        # One row per revealed pick (fixture kicked off), oldest first.
+        # Your own picks show in full; others' show only once kicked off.
         rows = []
         for mid, sc in scores.items():
-            if mid not in locked:
+            if not is_self and mid not in locked:
                 continue
             rows.append({"mid": mid, "pred": sc, "actual": _actual(mid),
                          "pts": pts_map.get(mid, 0), "ko": _KICKOFFS.get(mid, 0)})
@@ -824,7 +828,7 @@ def api_league_member(user, code, uid):
     # Predictor group scores reveal per kick-off; the bracket only at full lock.
     predictor_groups = _rows(pred_gs, tp["perMatch"])
     bracket = None
-    if _tournament_locked():
+    if is_self or _tournament_locked():
         sim = simulate(pred)
         actual_bracket = scoring.resolve_actual_bracket(results)
         bracket = {
