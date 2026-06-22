@@ -572,9 +572,37 @@ table { width: 100%; border-collapse: collapse; font-size: 13px; }
 /* League: clickable rows + member predictions panel */
 .clickable-row { cursor: pointer; }
 .clickable-row:hover td { background: var(--bg2); }
-.mp-sec { margin: 12px 0 4px; font-size: 13px; color: var(--accent2); }
-.mp-row { font-size: 13px; padding: 3px 0; border-top: 1px solid var(--line); }
-.mp-row b { margin: 0 4px; }
+.mp-sec { margin: 16px 0 6px; font-size: 13px; font-weight: 700; color: var(--accent2); display: flex; align-items: center; gap: 8px; }
+.mp-sectot { font-size: 11px; font-weight: 700; color: var(--win); background: rgba(31,157,99,.15); padding: 1px 8px; border-radius: 999px; }
+.mp-totals { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 4px; }
+.mp-totals span {
+  background: var(--bg2); border: 1px solid var(--line); border-radius: 999px;
+  padding: 5px 12px; font-size: 12px; color: var(--muted);
+}
+.mp-totals b { color: var(--accent); font-size: 15px; margin-left: 4px; }
+.mp-table { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.mp-row {
+  display: grid; grid-template-columns: 72px 1fr 78px 78px 42px; align-items: center;
+  gap: 8px; padding: 7px 10px; font-size: 13px; border-top: 1px solid var(--line);
+}
+.mp-row:first-child { border-top: none; }
+.mp-head { background: var(--bg2); font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); font-weight: 700; }
+.mp-when { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.mp-teams { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.mp-teams .tcode { display: none; }
+.mp-vs { color: var(--muted); font-size: 11px; }
+.mp-pick { font-weight: 700; white-space: nowrap; }
+.mp-res { white-space: nowrap; color: var(--text); }
+.mp-adv { display: block; font-size: 10px; color: var(--muted); font-weight: 600; }
+.mp-ptscol { text-align: right; }
+.mp-champ { font-size: 13px; padding: 4px 0 2px; }
+.mp-breakdown { display: flex; flex-wrap: wrap; gap: 6px 10px; margin: 6px 0 2px; }
+.mp-breakdown span { font-size: 11px; color: var(--muted); background: var(--bg2); border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; }
+.mp-breakdown b { color: var(--text); }
+@media (max-width: 600px) {
+  .mp-row { grid-template-columns: 1fr 60px 60px 34px; }
+  .mp-when { grid-column: 1 / -1; }
+}
 
 /* ===================== Modern refinements (v2) ===================== */
 .notice {

@@ -1021,41 +1021,62 @@ async function openMember(uid, name) {
     if (mid.startsWith("G-")) { const f = fxById[mid]; return f ? [f.home, f.away] : ["?", "?"]; }
     const a = ACTUAL_BRACKET[mid.slice(2)] || {}; return [a.teamA || "?", a.teamB || "?"];
   };
-  const line = (mid, sc) => {
-    const [h, a] = teamsFor(mid);
-    const adv = sc.adv ? ` · adv: ${escapeHTML(sc.adv)}` : "";
-    return `<div class="mp-row">${teamHTML(h)} <b>${sc.home ?? "–"}–${sc.away ?? "–"}</b> ${teamHTML(a)}${adv}</div>`;
+  const whenFor = mid => {
+    const f = mid.startsWith("G-") && fxById[mid];
+    return f && f.date ? fmtDate(f.date) : "M" + mid.slice(2);
+  };
+  const sc = (h, a) => `${h ?? "–"}–${a ?? "–"}`;
+  const ptsPill = p => `<span class="pts pts${p >= 3 ? 3 : (p >= 1 ? 1 : 0)}">+${p}</span>`;
+
+  const rowHTML = (r) => {
+    const [h, a] = teamsFor(r.mid);
+    const p = r.pred || {}, act = r.actual;
+    const advP = p.adv ? `<span class="mp-adv">→ ${escapeHTML(p.adv)}</span>` : "";
+    const advA = act && act.winner ? `<span class="mp-adv">→ ${escapeHTML(act.winner)}</span>` : "";
+    return `<div class="mp-row">
+      <span class="mp-when">${whenFor(r.mid)}</span>
+      <span class="mp-teams">${teamHTML(h)}<span class="mp-vs">v</span>${teamHTML(a)}</span>
+      <span class="mp-pick">${sc(p.home, p.away)}${advP}</span>
+      <span class="mp-res">${act ? sc(act.home, act.away) + advA : "<span class='hint'>—</span>"}</span>
+      <span class="mp-ptscol">${act ? ptsPill(r.pts) : ""}</span>
+    </div>`;
+  };
+  const section = (title, rows) => {
+    if (!rows || !rows.length)
+      return `<div class="mp-sec">${title} <span class="hint">— none revealed yet (reveals as games kick off)</span></div>`;
+    return `<div class="mp-sec">${title}</div><div class="mp-table">` +
+      `<div class="mp-row mp-head"><span class="mp-when">When</span><span class="mp-teams">Match</span>` +
+      `<span class="mp-pick">Pick</span><span class="mp-res">Actual</span><span class="mp-ptscol">Pts</span></div>` +
+      rows.map(rowHTML).join("") + `</div>`;
   };
 
-  let html = "";
-  // --- Predictor (the locked pre-tournament forecast) ---
-  const pg = Object.entries(data.predictorGroups || {});
-  html += `<div class="mp-sec"><b>Predictor — group scores</b> ${pg.length ? `<span class="hint">(${pg.length} revealed)</span>` : "<span class='hint'>— revealed as each game kicks off</span>"}</div>`;
-  pg.sort().forEach(([mid, sc]) => (html += line(mid, sc)));
-  if (data.tournament) {
-    const sim = (await api("POST", "/api/simulate", data.tournament)).data;
-    html += `<div class="mp-sec"><b>Predictor — knockout bracket</b> · predicted champion: ` +
-      `${sim.champion ? teamHTML(sim.champion) : "—"}</div>`;
-    (sim.bracket ? Object.entries(sim.bracket) : [])
-      .filter(([, m]) => m.winner)
-      .sort((x, y) => +x[0] - +y[0])
-      .forEach(([mid, m]) => {
-        html += `<div class="mp-row"><span class="hint">M${mid}</span> ${teamHTML(m.teamA)} v ${teamHTML(m.teamB)} → <b>${teamHTML(m.winner)}</b></div>`;
-      });
+  const P = data.points || {};
+  let html = `<div class="mp-totals">
+    <span>Predictor <b>${P.tournament || 0}</b></span>
+    <span>Rolling <b>${P.group || 0}</b></span>
+    <span>Knockout <b>${P.knockout || 0}</b></span></div>`;
+
+  html += section("🔮 Predictor — group scores", data.predictorGroups);
+
+  const b = data.predictorBracket;
+  if (b) {
+    html += `<div class="mp-sec">🔮 Predictor — knockout bracket <span class="mp-sectot">${b.koTotal} pts</span></div>`;
+    html += `<div class="mp-champ">Predicted champion: <b>${b.champion ? teamHTML(b.champion) : "—"}</b>` +
+      `${b.actualChampion ? ` · actual: ${teamHTML(b.actualChampion)}` : ""}</div>`;
+    const bd = b.breakdown || {};
+    const order = [["Round of 16", bd["Round of 16"]], ["Quarter-finals", bd["Quarter-finals"]],
+      ["Semi-finals", bd["Semi-finals"]], ["Final", bd["Final"]], ["Champion bonus", bd["champion"]]];
+    html += `<div class="mp-breakdown">` +
+      order.map(([k, v]) => `<span>${k} <b>${v || 0}</b></span>`).join("") + `</div>`;
   } else {
-    html += `<div class="mp-sec">🔒 <span class="hint">Knockout bracket hidden until predictions lock (end of Matchday 1).</span></div>`;
-  }
-  // --- Rolling picks ---
-  const grp = Object.entries(data.group || {});
-  html += `<div class="mp-sec"><b>Rolling group picks</b> ${grp.length ? "" : "<span class='hint'>— none revealed yet (matches reveal as they kick off)</span>"}</div>`;
-  grp.sort().forEach(([mid, sc]) => (html += line(mid, sc)));
-  const ko = Object.entries(data.knockout || {});
-  if (ko.length) {
-    html += `<div class="mp-sec"><b>Rolling knockout picks</b></div>`;
-    ko.sort((x, y) => +x[0].slice(2) - +y[0].slice(2)).forEach(([mid, sc]) => (html += line(mid, sc)));
+    html += `<div class="mp-sec">🔒 <span class="hint">Knockout bracket reveals once predictions lock (end of Matchday 1).</span></div>`;
   }
 
-  document.getElementById("league-member-title").textContent = `${name}'s predictions`;
+  html += section("⚡ Rolling — group picks", data.rollingGroups);
+  if (data.rollingKnockout && data.rollingKnockout.length)
+    html += section("⚡ Rolling — knockout picks", data.rollingKnockout);
+
+  document.getElementById("league-member-title").textContent = `${name}'s picks`;
   document.getElementById("league-member-body").innerHTML = html;
   document.getElementById("league-member").classList.remove("hidden");
 }

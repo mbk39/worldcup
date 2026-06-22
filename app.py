@@ -792,21 +792,57 @@ def api_league_member(user, code, uid):
         return jsonify({"error": "Not found."}), 404
 
     locked = _locked_match_ids()
+    results = db.get_all_results()
     rec = db.get_prediction(uid)
     pred = rec["state"] if rec else {}
     pred_gs = pred.get("groupScores") or {}
-    pred_ko = pred.get("koPicks") or {}
-    # Predictor group scores reveal per kick-off (the fixture is locked anyway);
-    # the full bracket reveals only once the predictor hard-locks (end of MD1).
-    predictor_groups = {mid: sc for mid, sc in pred_gs.items() if mid in locked}
-    tournament = {"groupScores": pred_gs, "koPicks": pred_ko} if _tournament_locked() else None
-    # Rolling per-match picks only visible for matches that have kicked off.
-    group = {mid: sc for mid, sc in db.get_live(uid).items() if mid in locked}
-    knockout = {mid: sc for mid, sc in db.get_live_ko(uid).items() if mid in locked}
-    return jsonify({"displayName": target["display_name"], "isYou": uid == user["id"],
-                    "predictorGroups": predictor_groups, "tournament": tournament,
-                    "bracketLocked": _tournament_locked(),
-                    "group": group, "knockout": knockout})
+    live = db.get_live(uid)
+    live_ko = db.get_live_ko(uid)
+
+    # Per-pick points for each track.
+    tp = scoring.compute_tournament_points(pred, results)
+    gp = scoring.compute_points({"groupScores": live}, results)
+    kp = scoring.compute_knockout_live_points(live_ko, results)
+
+    def _actual(mid):
+        r = results.get(mid) or {}
+        if isinstance(r.get("home"), int) and isinstance(r.get("away"), int):
+            return {"home": r["home"], "away": r["away"], "winner": r.get("winner")}
+        return None
+
+    def _rows(scores, pts_map):
+        # One row per revealed pick (fixture kicked off), oldest first.
+        rows = []
+        for mid, sc in scores.items():
+            if mid not in locked:
+                continue
+            rows.append({"mid": mid, "pred": sc, "actual": _actual(mid),
+                         "pts": pts_map.get(mid, 0), "ko": _KICKOFFS.get(mid, 0)})
+        rows.sort(key=lambda r: r["ko"])
+        return rows
+
+    # Predictor group scores reveal per kick-off; the bracket only at full lock.
+    predictor_groups = _rows(pred_gs, tp["perMatch"])
+    bracket = None
+    if _tournament_locked():
+        sim = simulate(pred)
+        actual_bracket = scoring.resolve_actual_bracket(results)
+        bracket = {
+            "champion": sim.get("champion"),
+            "actualChampion": actual_bracket.get(104, {}).get("winner"),
+            "breakdown": tp["koBreakdown"],
+            "koTotal": tp["ko"],
+        }
+
+    return jsonify({
+        "displayName": target["display_name"], "isYou": uid == user["id"],
+        "bracketLocked": _tournament_locked(),
+        "points": {"tournament": tp["total"], "group": gp["total"], "knockout": kp["total"]},
+        "predictorGroups": predictor_groups,
+        "predictorBracket": bracket,
+        "rollingGroups": _rows(live, gp["perMatch"]),
+        "rollingKnockout": _rows(live_ko, kp["perMatch"]),
+    })
 
 
 @app.route("/api/leagues/<code>/leave", methods=["POST"])
