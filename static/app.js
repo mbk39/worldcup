@@ -461,19 +461,19 @@ function _kobApply(data) {
           actual: data.actual || {}, perMatch: data.perMatch || {} };
 }
 async function renderKoBracket() {
-  if (!document.getElementById("kob-list") || !DATA) return;
+  if (!document.getElementById("kob-bracket") || !DATA) return;
   const { ok, data } = await api("GET", "/api/ko-bracket");
   if (ok) _kobApply(data);
   paintKoBracket();
 }
 function paintKoBracket() {
-  const wrap = document.getElementById("kob-list");
+  const wrap = document.getElementById("kob-bracket");
   if (!wrap) return;
   const bar = document.getElementById("kob-lock");
   bar.className = "lockbar" + (KOB.locked ? " locked" : "");
   bar.innerHTML = KOB.locked
     ? "🔒 The knockout bracket is locked — here's how your picks are doing."
-    : `🔓 Pick winners through to the champion (they advance automatically). Locks <b>${kobLockText()}</b>.`;
+    : `🔓 Click a winner in each tie through to the champion (they advance automatically). Locks <b>${kobLockText()}</b>.`;
   document.getElementById("kob-points").innerHTML = `Your bracket points so far: <b>${KOB.points || 0}</b>`;
   const champ = document.getElementById("kob-champion");
   if (KOB.champion) { champ.classList.remove("hidden"); champ.innerHTML = `🏆 Your champion: ${teamHTML(KOB.champion)}`; }
@@ -490,37 +490,74 @@ function paintKoBracket() {
   }
   notice.classList.add("hidden");
 
-  let html = "";
-  KOB_ROUNDS.forEach(([name, lo, hi]) => {
-    html += `<div class="ko-round-h">${name}</div><div class="kob-round">`;
-    for (let mid = lo; mid <= hi; mid++) html += kobMatchHTML(mid);
-    html += `</div>`;
-  });
-  wrap.innerHTML = html;
-  wrap.querySelectorAll(".kob-team.pickable").forEach(el =>
-    el.addEventListener("click", () => pickKoBracket(+el.dataset.mid, el.dataset.team)));
+  // Mirrored bracket, same layout as the pre-tournament Knockout Bracket.
+  wrap.className = "bracket2";
+  wrap.innerHTML = "";
+  const col = (name, id) => {
+    const c = document.createElement("div");
+    c.className = "bk-col";
+    c.innerHTML = `<h4>${name}</h4><div class="bk-matches" id="${id}"></div>`;
+    return c;
+  };
+  BK_LEFT.forEach(([name], i) => wrap.appendChild(col(name, "kobL" + i)));
+  const fin = col("Final", "kob-final");
+  fin.classList.add("bk-finalcol");
+  wrap.appendChild(fin);
+  BK_RIGHT.forEach(([name], i) => wrap.appendChild(col(name, "kobR" + i)));
+
+  const fill = (id, ids) => {
+    const c = document.getElementById(id);
+    if (!c) return;
+    c.innerHTML = "";
+    ids.forEach(mid => c.appendChild(kobBracketMatchEl(mid)));
+  };
+  BK_LEFT.forEach(([, ids], i) => fill("kobL" + i, ids));
+  BK_RIGHT.forEach(([, ids], i) => fill("kobR" + i, ids));
+  const fc = document.getElementById("kob-final");
+  if (fc) {
+    fc.innerHTML = "";
+    const fe = kobBracketMatchEl(104);
+    fe.classList.add("final-match");
+    fc.appendChild(fe);
+  }
 }
-function kobMatchHTML(mid) {
+function kobBracketMatchEl(mid) {
   const m = KOB.bracket[mid] || {};
   const lbl = bracketLabels[mid] || {};
-  const a = m.teamA, b = m.teamB;
   const picked = KOB.picks[mid] || m.winner;
   const aw = (KOB.actual[mid] || {}).winner;
   const pts = KOB.perMatch[mid];
-  const canPick = a && b && !KOB.locked;
-  const cell = (team, label, right) => {
-    if (!team) return `<div class="kob-team empty${right ? " kob-r" : ""}">${escapeHTML(label || "—")}</div>`;
-    const sel = picked === team ? " sel" : "";
-    const res = aw ? (team === aw ? " correct" : (picked === team ? " wrong" : "")) : "";
-    const pk = canPick ? " pickable" : "";
-    return `<div class="kob-team${sel}${res}${pk}${right ? " kob-r" : ""}" data-mid="${mid}" data-team="${escapeHTML(team)}">${teamHTML(team)}</div>`;
-  };
-  const pill = (aw != null && picked) ? `<span class="pts pts${pts >= 3 ? 3 : (pts >= 1 ? 1 : 0)}">+${pts || 0}</span>` : "";
-  const awTag = aw ? `<span class="kob-actual">✓ ${escapeHTML(aw)}</span>` : "";
-  return `<div class="kob-match">
-    <div class="kob-mid">M${mid} ${pill}</div>
-    ${cell(a, lbl.labelA, false)}<div class="kob-vs">v</div>${cell(b, lbl.labelB, true)}
-    ${awTag}</div>`;
+  const clickable = m.teamA && m.teamB && !KOB.locked;
+  const el = document.createElement("div");
+  el.className = "ko-match";
+  el.appendChild(kobTeamEl(mid, m.teamA, lbl.labelA, picked, aw, clickable));
+  el.appendChild(kobTeamEl(mid, m.teamB, lbl.labelB, picked, aw, clickable));
+  const tag = document.createElement("div");
+  tag.className = "mid";
+  tag.innerHTML = "Match " + mid +
+    ((aw != null && picked) ? ` <span class="pts pts${pts >= 3 ? 3 : (pts >= 1 ? 1 : 0)}">+${pts || 0}</span>` : "");
+  el.appendChild(tag);
+  return el;
+}
+function kobTeamEl(mid, team, placeholder, picked, aw, clickable) {
+  const div = document.createElement("div");
+  div.className = "ko-team";
+  if (team) {
+    div.innerHTML = teamHTML(team);
+    if (picked === team) div.classList.add("winner");
+    if (aw) {
+      if (team === aw) div.classList.add("correct");
+      else if (picked === team) div.classList.add("wrong");
+    }
+    if (clickable) {
+      div.classList.add("clickable");
+      div.addEventListener("click", () => pickKoBracket(mid, team));
+    }
+  } else {
+    div.classList.add("placeholder");
+    div.textContent = placeholder || "—";
+  }
+  return div;
 }
 async function pickKoBracket(mid, team) {
   if (KOB.locked) return;
