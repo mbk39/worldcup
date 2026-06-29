@@ -519,6 +519,11 @@ function paintKoBracket() {
     const fe = kobBracketMatchEl(104);
     fe.classList.add("final-match");
     fc.appendChild(fe);
+    const tp = document.createElement("div");
+    tp.className = "bk-tp-label";
+    tp.textContent = "3rd place play-off";
+    fc.appendChild(tp);
+    fc.appendChild(kobBracketMatchEl(103));
   }
 }
 function kobBracketMatchEl(mid) {

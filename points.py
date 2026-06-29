@@ -126,7 +126,7 @@ def compute_tournament_points(user_state, results):
 # --------------------------------------------------------------- KO bracket track
 # Classic bracket scoring: more points the deeper the round.
 KO_BRACKET_ROUND_POINTS = {"Round of 32": 1, "Round of 16": 2, "Quarter-finals": 4,
-                           "Semi-finals": 8, "Final": 16}
+                           "Semi-finals": 8, "Third place": 4, "Final": 16}
 
 
 def _ko_round_name(mid):
@@ -138,6 +138,8 @@ def _ko_round_name(mid):
         return "Quarter-finals"
     if mid in (101, 102):
         return "Semi-finals"
+    if mid == 103:
+        return "Third place"
     if mid == 104:
         return "Final"
     return None
