@@ -303,9 +303,15 @@ async function renderLiveKnockout() {
     `Your knockout points so far: <b>${MYPOINTS.knockout?.total || 0}</b>`;
 
   const notice = document.getElementById("live-ko-notice");
-  if (!ACTUAL_GROUP_COMPLETE) {
+  // Open as soon as any knockout line-up is confirmed — predict each tie once
+  // its two teams are known (others show "awaiting earlier results").
+  const anyKnown = DATA.bracket.some(r => r.matches.some(m => {
+    const a = ACTUAL_BRACKET[String(m.id)] || {};
+    return a.teamA && a.teamB;
+  }));
+  if (!anyKnown) {
     notice.classList.remove("hidden");
-    notice.textContent = "🔒 Knockout predictions open once the group stage finishes and the Round-of-32 is set.";
+    notice.textContent = "🔒 Knockout predictions open as soon as the first Round-of-32 line-ups are confirmed.";
     wrap.innerHTML = "";
     return;
   }
