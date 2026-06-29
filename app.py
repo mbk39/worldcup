@@ -672,8 +672,10 @@ def api_feed_results():
         if mid not in _VALID_MATCH_IDS:
             continue
         status = it.get("status") if it.get("status") in ("scheduled", "live", "ft") else "live"
+        # Knockout matches carry the advancing team (esp. for ties on penalties).
+        winner = (it.get("winner") or "").strip()[:40] or None if mid.startswith("K-") else None
         db.upsert_result(mid, _parse_score(it.get("home")), _parse_score(it.get("away")),
-                         status, _clean_scorers(it.get("scorers")), now)
+                         status, _clean_scorers(it.get("scorers")), now, winner=winner)
         updated += 1
     return jsonify({"ok": True, "updated": updated})
 

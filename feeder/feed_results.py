@@ -66,6 +66,24 @@ def build_fixture_map():
     return out
 
 
+def build_ko_map():
+    """frozenset of the two team tokens -> our knockout match id (K-<num>).
+
+    Built from the app's resolved actual bracket, so it fills in round by round
+    as earlier results land. Returns {} if the bracket isn't reachable yet."""
+    out = {}
+    try:
+        data = requests.get(f"{APP_URL}/api/bracket/actual", timeout=30).json()
+    except Exception as exc:  # noqa: BLE001
+        print(f"  ko map fetch error: {exc!r}")
+        return out
+    for num, m in (data.get("bracket") or {}).items():
+        a, b = m.get("teamA"), m.get("teamB")
+        if a and b:
+            out[pair_key(a, b)] = f"K-{num}"
+    return out
+
+
 def parse_event(ev):
     """Return (matchId-less) dict for a single ESPN event, or None to skip."""
     comp = ev["competitions"][0]
@@ -74,11 +92,14 @@ def parse_event(ev):
         return None  # not started — don't overwrite with 0-0
 
     sides, id_to_side = {}, {}
+    winner_team = None
     for c in comp.get("competitors", []):
         side = c.get("homeAway")
         sides[side] = c
         id_to_side[str(c.get("id"))] = side
         id_to_side[str(c.get("team", {}).get("id"))] = side
+        if c.get("winner"):   # set by ESPN on the advancing team (incl. shootouts)
+            winner_team = c.get("team", {}).get("displayName")
     if "home" not in sides or "away" not in sides:
         return None
 
@@ -110,6 +131,7 @@ def parse_event(ev):
         "away": score(sides["away"]),
         "status": "ft" if state == "post" else "live",
         "scorers": scorers,
+        "winner": winner_team,
     }
 
 
@@ -126,8 +148,10 @@ def main():
     except Exception as exc:  # noqa: BLE001 - app unreachable / bad response
         print(f"::warning::Could not load fixtures from {APP_URL}: {exc!r} — skipping.")
         return 0
-    print(f"Loaded {len(fixtures)} group fixtures from {APP_URL}")
+    ko = build_ko_map()   # knockout ties resolved so far (may be empty pre-KO)
+    print(f"Loaded {len(fixtures)} group fixtures and {len(ko)} knockout ties from {APP_URL}")
 
+    KO_START = dt.date(2026, 6, 28)   # first Round-of-32 match
     today = dt.datetime.utcnow().date()
     dates = [today + dt.timedelta(days=d) for d in (-1, 0, 1)]
     collected = {}
@@ -146,16 +170,23 @@ def main():
                 continue
             if not p:
                 continue
-            mid = fixtures.get(pair_key(p["home_team"], p["away_team"]))
+            key = pair_key(p["home_team"], p["away_team"])
+            # During the knockout phase prefer the KO map (group opponents can
+            # meet again); otherwise it's a group game. Fall back to the other.
+            if day >= KO_START:
+                mid = ko.get(key) or fixtures.get(key)
+            else:
+                mid = fixtures.get(key) or ko.get(key)
             if not mid:
-                continue  # not a group match we track (e.g. knockout)
-            collected[mid] = {
-                "matchId": mid, "home": p["home"], "away": p["away"],
-                "status": p["status"], "scorers": p["scorers"],
-            }
+                continue  # a match we don't track
+            item = {"matchId": mid, "home": p["home"], "away": p["away"],
+                    "status": p["status"], "scorers": p["scorers"]}
+            if mid.startswith("K-"):
+                item["winner"] = p.get("winner")
+            collected[mid] = item
 
     if not collected:
-        print("No live/finished group matches to push right now.")
+        print("No live/finished matches to push right now.")
         return 0
 
     resp = requests.post(
