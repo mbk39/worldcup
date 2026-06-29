@@ -117,28 +117,60 @@ def _ko_bracket_locked(now=None):
     return (_now() if now is None else now) >= _KO_BRACKET_LOCK
 
 
+def _completed_ko_winners(results):
+    """Actual winner for every knockout tie that has FINISHED — used to lock and
+    prefill those ties in the bracket so nobody predicts a played game."""
+    actual = scoring.resolve_actual_bracket(results)
+    out = {}
+    for mid, m in actual.items():
+        r = results.get(f"K-{mid}") or {}
+        if r.get("status") != "ft":
+            continue
+        w = m.get("winner")
+        if not w:  # decisive full-time score with no explicit advancer recorded
+            h, a = r.get("home"), r.get("away")
+            if isinstance(h, int) and isinstance(a, int) and h != a and m.get("teamA") and m.get("teamB"):
+                w = m["teamA"] if h > a else m["teamB"]
+        if w:
+            out[str(mid)] = w
+    return out
+
+
+def _effective_ko_picks(picks, results):
+    """User picks with already-finished ties overridden by the real winner."""
+    eff = {str(k): v for k, v in (picks or {}).items() if str(k).isdigit()}
+    eff.update(_completed_ko_winners(results))   # completed ties win
+    return eff
+
+
 def _resolve_ko_bracket(results, picks):
     """Resolve a knockout bracket seeded from the ACTUAL Round-of-32 line-up
-    (from real group results) and advanced by the user's winner picks."""
+    (from real group results) and advanced by the (effective) winner picks."""
     gs = {mid: {"home": r["home"], "away": r["away"]}
           for mid, r in results.items()
           if mid.startswith("G-") and isinstance(r.get("home"), int)
           and isinstance(r.get("away"), int)}
     standings = engine.compute_all_groups(gs)
-    # engine keys ko_picks by str(match_id)
     p = {str(k): v for k, v in (picks or {}).items() if str(k).isdigit()}
     bracket, _, _ = engine.resolve_bracket(standings, gs, p)
     return bracket
 
 
+def _ko_points(picks, results):
+    return scoring.compute_ko_bracket_points(_effective_ko_picks(picks, results), results)
+
+
 def _ko_bracket_payload(uid):
     results = db.get_all_results()
     picks = db.get_ko_bracket(uid)
-    bracket = _resolve_ko_bracket(results, picks)
+    completed = _completed_ko_winners(results)
+    eff = _effective_ko_picks(picks, results)
+    bracket = _resolve_ko_bracket(results, eff)
     actual = scoring.resolve_actual_bracket(results)
-    pts = scoring.compute_ko_bracket_points(picks, results)
+    pts = scoring.compute_ko_bracket_points(eff, results)
     return {
         "picks": picks,
+        "completed": list(completed.keys()),
         "locked": _ko_bracket_locked(),
         "lockTime": _KO_BRACKET_LOCK,
         "bracket": {str(k): v for k, v in bracket.items()},
@@ -520,7 +552,7 @@ def api_my_points(user):
     tournament = scoring.compute_tournament_points(rec["state"] if rec else None, results)
     group = scoring.compute_points({"groupScores": db.get_live(user["id"])}, results)
     knockout = scoring.compute_knockout_live_points(db.get_live_ko(user["id"]), results)
-    koBracket = scoring.compute_ko_bracket_points(db.get_ko_bracket(user["id"]), results)
+    koBracket = _ko_points(db.get_ko_bracket(user["id"]), results)
     return jsonify({"tournament": tournament, "group": group, "knockout": knockout,
                     "koBracket": koBracket})
 
@@ -807,7 +839,7 @@ def api_league_detail(user, code):
         rg = scoring.compute_points({"groupScores": live_states.get(uid, {})}, results)["total"]
         rko = scoring.compute_knockout_live_points(ko_states.get(uid, {}), results)["total"]
         # "Knockout" leaderboard is the click-winner bracket challenge.
-        kb = scoring.compute_ko_bracket_points(kob_states.get(uid, {}), results)["total"]
+        kb = _ko_points(kob_states.get(uid, {}), results)["total"]
         m["points"] = {"tournament": t, "group": rg + rko, "knockout": kb}
     members.sort(key=lambda m: (-(m["points"]["tournament"] + m["points"]["group"]
                                   + m["points"]["knockout"]), m["displayName"].lower()))
@@ -912,7 +944,7 @@ def api_league_member(user, code, uid):
         }
 
     # Knockout-bracket challenge — reveals to others once it locks.
-    kbp = db.get_ko_bracket(uid)
+    kbp = _effective_ko_picks(db.get_ko_bracket(uid), results)   # completed ties prefilled
     kb = scoring.compute_ko_bracket_points(kbp, results)
     ko_bracket_rows = None
     if is_self or _ko_bracket_locked():

@@ -442,7 +442,7 @@ async function onLiveKoChange(row) {
 }
 
 // ================================================================ KO Bracket
-let KOB = { picks: {}, bracket: {}, actual: {}, perMatch: {}, locked: false, lockTime: 0, champion: null, points: 0 };
+let KOB = { picks: {}, bracket: {}, actual: {}, perMatch: {}, locked: false, lockTime: 0, champion: null, points: 0, completed: new Set() };
 const KOB_ROUNDS = [
   ["Round of 32", 73, 88], ["Round of 16", 89, 96], ["Quarter-finals", 97, 100],
   ["Semi-finals", 101, 102], ["Final", 104, 104],
@@ -458,7 +458,8 @@ function kobLockText() {
 }
 function _kobApply(data) {
   KOB = { ...KOB, ...data, picks: data.picks || {}, bracket: data.bracket || {},
-          actual: data.actual || {}, perMatch: data.perMatch || {} };
+          actual: data.actual || {}, perMatch: data.perMatch || {},
+          completed: new Set((data.completed || []).map(String)) };
 }
 async function renderKoBracket() {
   if (!document.getElementById("kob-bracket") || !DATA) return;
@@ -529,17 +530,18 @@ function paintKoBracket() {
 function kobBracketMatchEl(mid) {
   const m = KOB.bracket[mid] || {};
   const lbl = bracketLabels[mid] || {};
-  const picked = KOB.picks[mid] || m.winner;
+  const picked = m.winner;                       // effective winner (incl prefilled completed ties)
   const aw = (KOB.actual[mid] || {}).winner;
   const pts = KOB.perMatch[mid];
-  const clickable = m.teamA && m.teamB && !KOB.locked;
+  const done = KOB.completed.has(String(mid));    // tie already finished -> locked
+  const clickable = m.teamA && m.teamB && !KOB.locked && !done;
   const el = document.createElement("div");
-  el.className = "ko-match";
+  el.className = "ko-match" + (done ? " ko-done" : "");
   el.appendChild(kobTeamEl(mid, m.teamA, lbl.labelA, picked, aw, clickable));
   el.appendChild(kobTeamEl(mid, m.teamB, lbl.labelB, picked, aw, clickable));
   const tag = document.createElement("div");
   tag.className = "mid";
-  tag.innerHTML = "Match " + mid +
+  tag.innerHTML = "Match " + mid + (done ? " 🔒" : "") +
     ((aw != null && picked) ? ` <span class="pts pts${pts >= 3 ? 3 : (pts >= 1 ? 1 : 0)}">+${pts || 0}</span>` : "");
   el.appendChild(tag);
   return el;
@@ -565,7 +567,7 @@ function kobTeamEl(mid, team, placeholder, picked, aw, clickable) {
   return div;
 }
 async function pickKoBracket(mid, team) {
-  if (KOB.locked) return;
+  if (KOB.locked || KOB.completed.has(String(mid))) return;
   const k = String(mid);
   if (KOB.picks[k] === team) delete KOB.picks[k];
   else KOB.picks[k] = team;
