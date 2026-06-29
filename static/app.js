@@ -194,6 +194,8 @@ function startLiveRefresh() {
     } else if (active === "live") {
       await renderLive();
       await renderLiveKnockout();
+    } else if (active === "kobracket") {
+      await renderKoBracket();
     } else if (active === "leagues" &&
                !document.getElementById("league-detail").classList.contains("hidden")) {
       const code = document.getElementById("league-detail-code").textContent;
@@ -439,6 +441,97 @@ async function onLiveKoChange(row) {
     `Your knockout points so far: <b>${MYPOINTS.knockout?.total || 0}</b>`;
 }
 
+// ================================================================ KO Bracket
+let KOB = { picks: {}, bracket: {}, actual: {}, perMatch: {}, locked: false, lockTime: 0, champion: null, points: 0 };
+const KOB_ROUNDS = [
+  ["Round of 32", 73, 88], ["Round of 16", 89, 96], ["Quarter-finals", 97, 100],
+  ["Semi-finals", 101, 102], ["Final", 104, 104],
+];
+function kobLockText() {
+  if (!KOB.lockTime) return "soon";
+  try {
+    return new Date(KOB.lockTime * 1000).toLocaleString("en-GB", {
+      timeZone: "Europe/London", weekday: "short", day: "numeric",
+      month: "short", hour: "2-digit", minute: "2-digit",
+    }) + " BST";
+  } catch (_) { return "the deadline"; }
+}
+function _kobApply(data) {
+  KOB = { ...KOB, ...data, picks: data.picks || {}, bracket: data.bracket || {},
+          actual: data.actual || {}, perMatch: data.perMatch || {} };
+}
+async function renderKoBracket() {
+  if (!document.getElementById("kob-list") || !DATA) return;
+  const { ok, data } = await api("GET", "/api/ko-bracket");
+  if (ok) _kobApply(data);
+  paintKoBracket();
+}
+function paintKoBracket() {
+  const wrap = document.getElementById("kob-list");
+  if (!wrap) return;
+  const bar = document.getElementById("kob-lock");
+  bar.className = "lockbar" + (KOB.locked ? " locked" : "");
+  bar.innerHTML = KOB.locked
+    ? "🔒 The knockout bracket is locked — here's how your picks are doing."
+    : `🔓 Pick winners through to the champion (they advance automatically). Locks <b>${kobLockText()}</b>.`;
+  document.getElementById("kob-points").innerHTML = `Your bracket points so far: <b>${KOB.points || 0}</b>`;
+  const champ = document.getElementById("kob-champion");
+  if (KOB.champion) { champ.classList.remove("hidden"); champ.innerHTML = `🏆 Your champion: ${teamHTML(KOB.champion)}`; }
+  else champ.classList.add("hidden");
+
+  const r32known = Object.keys(KOB.bracket).some(k => +k >= 73 && +k <= 88 &&
+    KOB.bracket[k].teamA && KOB.bracket[k].teamB);
+  const notice = document.getElementById("kob-notice");
+  if (!r32known) {
+    notice.classList.remove("hidden");
+    notice.textContent = "The bracket opens once the Round-of-32 line-ups are confirmed.";
+    wrap.innerHTML = "";
+    return;
+  }
+  notice.classList.add("hidden");
+
+  let html = "";
+  KOB_ROUNDS.forEach(([name, lo, hi]) => {
+    html += `<div class="ko-round-h">${name}</div><div class="kob-round">`;
+    for (let mid = lo; mid <= hi; mid++) html += kobMatchHTML(mid);
+    html += `</div>`;
+  });
+  wrap.innerHTML = html;
+  wrap.querySelectorAll(".kob-team.pickable").forEach(el =>
+    el.addEventListener("click", () => pickKoBracket(+el.dataset.mid, el.dataset.team)));
+}
+function kobMatchHTML(mid) {
+  const m = KOB.bracket[mid] || {};
+  const lbl = bracketLabels[mid] || {};
+  const a = m.teamA, b = m.teamB;
+  const picked = KOB.picks[mid] || m.winner;
+  const aw = (KOB.actual[mid] || {}).winner;
+  const pts = KOB.perMatch[mid];
+  const canPick = a && b && !KOB.locked;
+  const cell = (team, label, right) => {
+    if (!team) return `<div class="kob-team empty${right ? " kob-r" : ""}">${escapeHTML(label || "—")}</div>`;
+    const sel = picked === team ? " sel" : "";
+    const res = aw ? (team === aw ? " correct" : (picked === team ? " wrong" : "")) : "";
+    const pk = canPick ? " pickable" : "";
+    return `<div class="kob-team${sel}${res}${pk}${right ? " kob-r" : ""}" data-mid="${mid}" data-team="${escapeHTML(team)}">${teamHTML(team)}</div>`;
+  };
+  const pill = (aw != null && picked) ? `<span class="pts pts${pts >= 3 ? 3 : (pts >= 1 ? 1 : 0)}">+${pts || 0}</span>` : "";
+  const awTag = aw ? `<span class="kob-actual">✓ ${escapeHTML(aw)}</span>` : "";
+  return `<div class="kob-match">
+    <div class="kob-mid">M${mid} ${pill}</div>
+    ${cell(a, lbl.labelA, false)}<div class="kob-vs">v</div>${cell(b, lbl.labelB, true)}
+    ${awTag}</div>`;
+}
+async function pickKoBracket(mid, team) {
+  if (KOB.locked) return;
+  const k = String(mid);
+  if (KOB.picks[k] === team) delete KOB.picks[k];
+  else KOB.picks[k] = team;
+  const { ok, data } = await api("POST", "/api/ko-bracket", { picks: KOB.picks });
+  if (ok) { _kobApply(data); paintKoBracket(); }
+  else { alert(data.error || "Could not save."); renderKoBracket(); }
+}
+
 function renderMap() {
   const wrap = document.getElementById("map-list");
   if (!wrap || !DATA || !DATA.venues) return;
@@ -590,6 +683,7 @@ function wireTabs() {
       if (tab.dataset.tab === "admin" && currentUser && currentUser.isAdmin) renderAdmin();
       if (tab.dataset.tab === "results") renderResults();
       if (tab.dataset.tab === "live") { renderLive(); renderLiveKnockout(); }
+      if (tab.dataset.tab === "kobracket") renderKoBracket();
       if (tab.dataset.tab === "map") renderMap();
     });
   });
@@ -1081,6 +1175,27 @@ async function openMember(uid, name) {
   html += section("⚡ Rolling — group picks", data.rollingGroups);
   if (data.rollingKnockout && data.rollingKnockout.length)
     html += section("⚡ Rolling — knockout picks", data.rollingKnockout);
+
+  // Knockout bracket challenge
+  if (data.koBracket) {
+    html += `<div class="mp-sec">🏆 Knockout bracket <span class="mp-sectot">${P.knockout || 0} pts</span></div>`;
+    if (data.koBracket.length) {
+      html += data.koBracket.map(r => {
+        const corr = r.actualWinner ? (r.pick === r.actualWinner ? "kob-ok" : "kob-no") : "";
+        const pill = r.actualWinner ? `<span class="pts pts${r.pts >= 3 ? 3 : (r.pts >= 1 ? 1 : 0)}">+${r.pts || 0}</span>` : "";
+        return `<div class="mp-row" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <span class="mp-when">M${r.mid}</span>
+          <span>${r.teamA ? teamHTML(r.teamA) : "?"} <span class="mp-vs">v</span> ${r.teamB ? teamHTML(r.teamB) : "?"}</span>
+          <span class="${corr}">→ ${r.pick ? teamHTML(r.pick) : "—"}</span>
+          ${r.actualWinner ? `<span class="hint">won: ${teamHTML(r.actualWinner)}</span> ${pill}` : ""}
+        </div>`;
+      }).join("");
+    } else {
+      html += `<div class="mp-sec"><span class="hint">No bracket picks.</span></div>`;
+    }
+  } else {
+    html += `<div class="mp-sec">🔒 <span class="hint">Knockout bracket reveals once it locks (end of 30 June).</span></div>`;
+  }
 
   document.getElementById("league-member-title").textContent = `${name}'s picks`;
   document.getElementById("league-member-body").innerHTML = html;

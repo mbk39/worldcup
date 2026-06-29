@@ -40,6 +40,7 @@
     <button class="tab" data-tab="leagues">My Leagues</button>
     <button class="tab" data-tab="predictor">Predictor</button>
     <button class="tab" data-tab="live">Rolling Picks</button>
+    <button class="tab" data-tab="kobracket">KO Bracket</button>
     <button class="tab" data-tab="results">Results</button>
     <button class="tab" data-tab="map">Map</button>
     <button class="tab admin-only hidden" data-tab="admin">⚙️ Admin</button>
@@ -107,6 +108,18 @@
         <div id="live-ko-notice" class="notice hidden"></div>
         <div id="live-ko-list"></div>
       </div>
+    </section>
+
+    <section id="tab-kobracket" class="tab-panel">
+      <div class="predictions-head">
+        <h2>🏆 Knockout Bracket</h2>
+        <p class="hint">Pick a winner for every knockout tie, right through to the champion — winners advance automatically. One bracket, locked at the deadline below. This is your <b>Knockout</b> leaderboard; the Rolling Picks feed the Rolling leaderboard.</p>
+      </div>
+      <div id="kob-lock" class="lockbar"></div>
+      <div id="kob-champion" class="kob-champion hidden"></div>
+      <div id="kob-points" class="live-points"></div>
+      <div id="kob-notice" class="notice hidden"></div>
+      <div id="kob-list"></div>
     </section>
 
     <section id="tab-results" class="tab-panel">

@@ -123,6 +123,50 @@ def compute_tournament_points(user_state, results):
             "perMatch": g["perMatch"], "koBreakdown": ko["breakdown"]}
 
 
+# --------------------------------------------------------------- KO bracket track
+# Classic bracket scoring: more points the deeper the round.
+KO_BRACKET_ROUND_POINTS = {"Round of 32": 1, "Round of 16": 2, "Quarter-finals": 4,
+                           "Semi-finals": 8, "Final": 16}
+
+
+def _ko_round_name(mid):
+    if 73 <= mid <= 88:
+        return "Round of 32"
+    if 89 <= mid <= 96:
+        return "Round of 16"
+    if 97 <= mid <= 100:
+        return "Quarter-finals"
+    if mid in (101, 102):
+        return "Semi-finals"
+    if mid == 104:
+        return "Final"
+    return None
+
+
+def compute_ko_bracket_points(picks, results):
+    """Click-winner bracket: award the round's points for each match where the
+    user's predicted winner matches the team that actually advanced.
+
+    picks: {match_num(str|int): team}. Returns {total, perMatch}.
+    """
+    picks = picks or {}
+    actual = resolve_actual_bracket(results)   # actual {mid: {teamA,teamB,winner}}
+    per, total = {}, 0
+    for k, team in picks.items():
+        try:
+            mid = int(k)
+        except (TypeError, ValueError):
+            continue
+        rnd = _ko_round_name(mid)
+        if not rnd:
+            continue
+        aw = actual.get(mid, {}).get("winner")
+        pts = KO_BRACKET_ROUND_POINTS[rnd] if (team and aw and team == aw) else 0
+        per[str(mid)] = pts
+        total += pts
+    return {"total": total, "perMatch": per}
+
+
 def compute_knockout_live_points(ko_scores, results):
     """Knockout-live track: 3 for exact full-time score, 1 for correct advancer."""
     ko_scores = ko_scores or {}

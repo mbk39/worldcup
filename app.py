@@ -102,6 +102,51 @@ def _locked_match_ids(now=None):
 
 def _tournament_locked(now=None):
     return (_now() if now is None else now) >= _TOURNAMENT_LOCK
+
+
+# Knockout-bracket challenge: one hard deadline (BST), overridable via env so the
+# admin can move it without a code change. Default: end of 30 June 2026.
+try:
+    _kbd, _kbt = os.environ.get("KO_BRACKET_LOCK", "2026-06-30 23:59").split(" ")
+    _KO_BRACKET_LOCK = _kickoff_epoch(_kbd, _kbt)
+except Exception:  # noqa: BLE001 - fall back to the default on a bad value
+    _KO_BRACKET_LOCK = _kickoff_epoch("2026-06-30", "23:59")
+
+
+def _ko_bracket_locked(now=None):
+    return (_now() if now is None else now) >= _KO_BRACKET_LOCK
+
+
+def _resolve_ko_bracket(results, picks):
+    """Resolve a knockout bracket seeded from the ACTUAL Round-of-32 line-up
+    (from real group results) and advanced by the user's winner picks."""
+    gs = {mid: {"home": r["home"], "away": r["away"]}
+          for mid, r in results.items()
+          if mid.startswith("G-") and isinstance(r.get("home"), int)
+          and isinstance(r.get("away"), int)}
+    standings = engine.compute_all_groups(gs)
+    # engine keys ko_picks by str(match_id)
+    p = {str(k): v for k, v in (picks or {}).items() if str(k).isdigit()}
+    bracket, _, _ = engine.resolve_bracket(standings, gs, p)
+    return bracket
+
+
+def _ko_bracket_payload(uid):
+    results = db.get_all_results()
+    picks = db.get_ko_bracket(uid)
+    bracket = _resolve_ko_bracket(results, picks)
+    actual = scoring.resolve_actual_bracket(results)
+    pts = scoring.compute_ko_bracket_points(picks, results)
+    return {
+        "picks": picks,
+        "locked": _ko_bracket_locked(),
+        "lockTime": _KO_BRACKET_LOCK,
+        "bracket": {str(k): v for k, v in bracket.items()},
+        "actual": {str(k): {"winner": v.get("winner")} for k, v in actual.items()},
+        "champion": bracket.get(104, {}).get("winner"),
+        "points": pts["total"],
+        "perMatch": pts["perMatch"],
+    }
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _ADMIN_EMAILS = {
     e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()
@@ -475,7 +520,9 @@ def api_my_points(user):
     tournament = scoring.compute_tournament_points(rec["state"] if rec else None, results)
     group = scoring.compute_points({"groupScores": db.get_live(user["id"])}, results)
     knockout = scoring.compute_knockout_live_points(db.get_live_ko(user["id"]), results)
-    return jsonify({"tournament": tournament, "group": group, "knockout": knockout})
+    koBracket = scoring.compute_ko_bracket_points(db.get_ko_bracket(user["id"]), results)
+    return jsonify({"tournament": tournament, "group": group, "knockout": knockout,
+                    "koBracket": koBracket})
 
 
 @app.route("/api/bracket/actual")
@@ -550,6 +597,28 @@ def api_save_live_ko(user):
             existing[mid] = {"home": h, "away": a, "adv": adv, "method": method}
     db.save_live_ko(user["id"], existing, int(time.time()))
     return jsonify({"ok": True, "scores": existing, "rejected": rejected})
+
+
+# --------------------------------------------------------------- KO bracket
+@app.route("/api/ko-bracket", methods=["GET"])
+@login_required
+def api_get_ko_bracket(user):
+    return jsonify(_ko_bracket_payload(user["id"]))
+
+
+@app.route("/api/ko-bracket", methods=["POST"])
+@login_required
+def api_save_ko_bracket(user):
+    if _ko_bracket_locked():
+        return jsonify({"error": "The knockout bracket is locked."}), 403
+    body = request.get_json(force=True, silent=True) or {}
+    incoming = body.get("picks") or {}
+    clean = {}
+    for k, v in incoming.items():
+        if str(k).isdigit() and isinstance(v, str) and v.strip():
+            clean[str(int(k))] = v.strip()[:40]
+    db.save_ko_bracket(user["id"], clean, int(time.time()))
+    return jsonify({"ok": True, **_ko_bracket_payload(user["id"])})
 
 
 @app.route("/api/feed/results", methods=["POST"])
@@ -730,12 +799,16 @@ def api_league_detail(user, code):
     tour_states = {m["userId"]: m["state"] for m in db.get_league_member_states(lg["id"])}
     live_states = db.get_league_member_live(lg["id"])
     ko_states = db.get_league_member_live_ko(lg["id"])
+    kob_states = db.get_league_member_ko_bracket(lg["id"])
     for m in members:
         uid = m["userId"]
         t = scoring.compute_tournament_points(tour_states.get(uid), results)["total"]
-        g = scoring.compute_points({"groupScores": live_states.get(uid, {})}, results)["total"]
-        k = scoring.compute_knockout_live_points(ko_states.get(uid, {}), results)["total"]
-        m["points"] = {"tournament": t, "group": g, "knockout": k}
+        # "Rolling" leaderboard accumulates rolling group + rolling knockout picks.
+        rg = scoring.compute_points({"groupScores": live_states.get(uid, {})}, results)["total"]
+        rko = scoring.compute_knockout_live_points(ko_states.get(uid, {}), results)["total"]
+        # "Knockout" leaderboard is the click-winner bracket challenge.
+        kb = scoring.compute_ko_bracket_points(kob_states.get(uid, {}), results)["total"]
+        m["points"] = {"tournament": t, "group": rg + rko, "knockout": kb}
     members.sort(key=lambda m: (-(m["points"]["tournament"] + m["points"]["group"]
                                   + m["points"]["knockout"]), m["displayName"].lower()))
     group_done = sum(1 for mid, r in results.items()
@@ -838,14 +911,38 @@ def api_league_member(user, code, uid):
             "koTotal": tp["ko"],
         }
 
+    # Knockout-bracket challenge — reveals to others once it locks.
+    kbp = db.get_ko_bracket(uid)
+    kb = scoring.compute_ko_bracket_points(kbp, results)
+    ko_bracket_rows = None
+    if is_self or _ko_bracket_locked():
+        rb = _resolve_ko_bracket(results, kbp)
+        ab = scoring.resolve_actual_bracket(results)
+        rows = []
+        for k, team in kbp.items():
+            if not str(k).isdigit():
+                continue
+            mid = int(k)
+            m = rb.get(mid, {})
+            rows.append({"mid": mid, "pick": team,
+                         "teamA": m.get("teamA"), "teamB": m.get("teamB"),
+                         "actualWinner": ab.get(mid, {}).get("winner"),
+                         "pts": kb["perMatch"].get(str(mid), 0),
+                         "ko": _KICKOFFS.get(f"K-{mid}", 0)})
+        rows.sort(key=lambda r: r["ko"])
+        ko_bracket_rows = rows
+
     return jsonify({
         "displayName": target["display_name"], "isYou": uid == user["id"],
         "bracketLocked": _tournament_locked(),
-        "points": {"tournament": tp["total"], "group": gp["total"], "knockout": kp["total"]},
+        "koBracketLocked": _ko_bracket_locked(),
+        "points": {"tournament": tp["total"], "group": gp["total"] + kp["total"],
+                   "knockout": kb["total"]},
         "predictorGroups": predictor_groups,
         "predictorBracket": bracket,
         "rollingGroups": _rows(live, gp["perMatch"]),
         "rollingKnockout": _rows(live_ko, kp["perMatch"]),
+        "koBracket": ko_bracket_rows,
     })
 
 

@@ -73,6 +73,12 @@ def init_db():
                 updated INTEGER NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS ko_bracket_predictions (
+                user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                picks   TEXT NOT NULL,   -- JSON {match_num: winning_team}
+                updated INTEGER NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS results (
                 match_id TEXT PRIMARY KEY,   -- 'G-A-1' for groups, 'K-73' for knockout
                 home     INTEGER,
@@ -402,6 +408,36 @@ def get_league_member_live_ko(league_id):
             (league_id,),
         ).fetchall()
     return {r["user_id"]: (json.loads(r["scores"]) if r["scores"] else {}) for r in rows}
+
+
+# --------------------------------------------------------------- KO bracket
+def save_ko_bracket(user_id, picks, updated):
+    with _lock, _conn() as conn:
+        conn.execute(
+            """INSERT INTO ko_bracket_predictions(user_id,picks,updated) VALUES(?,?,?)
+               ON CONFLICT(user_id) DO UPDATE SET picks=excluded.picks, updated=excluded.updated""",
+            (user_id, json.dumps(picks), updated),
+        )
+
+
+def get_ko_bracket(user_id):
+    with _conn() as conn:
+        r = conn.execute(
+            "SELECT picks FROM ko_bracket_predictions WHERE user_id=?", (user_id,)
+        ).fetchone()
+    return json.loads(r["picks"]) if r else {}
+
+
+def get_league_member_ko_bracket(league_id):
+    with _conn() as conn:
+        rows = conn.execute(
+            """SELECT m.user_id, k.picks AS picks
+               FROM league_members m
+               LEFT JOIN ko_bracket_predictions k ON k.user_id = m.user_id
+               WHERE m.league_id = ?""",
+            (league_id,),
+        ).fetchall()
+    return {r["user_id"]: (json.loads(r["picks"]) if r["picks"] else {}) for r in rows}
 
 
 # --------------------------------------------------------------- results
