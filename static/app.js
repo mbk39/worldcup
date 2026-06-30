@@ -1838,6 +1838,47 @@ async function renderResults() {
       ${scLine}${predLine}
     </div>`;
   });
+
+  // Knockout stage — same layout, teams from the resolved bracket.
+  await fetchActualBracket();
+  const koM = [];
+  DATA.bracket.forEach(rd => rd.matches.forEach(m => koM.push({ ...m, round: rd.name })));
+  koM.sort((a, b) => ((a.date || "") + (a.time || "")).localeCompare((b.date || "") + (b.time || "")));
+  let koDate = null;
+  koM.forEach(m => {
+    const ab = ACTUAL_BRACKET[String(m.id)] || {};
+    const teamA = ab.teamA, teamB = ab.teamB;
+    const r = RESULTS["K-" + m.id];
+    const hasScore = r && r.home != null && r.away != null;
+    if (m.date && m.date !== koDate) { koDate = m.date; html += `<div class="sched-day">${fmtFullDate(m.date)}</div>`; }
+    let mid;
+    if (hasScore) {
+      const badge = r.status === "live" ? `<span class="st live">LIVE</span>`
+                  : r.status === "ft" ? `<span class="st ft">FT</span>` : "";
+      mid = `<span class="sc">${r.home} – ${r.away}${badge}</span>`;
+    } else {
+      mid = `<span class="vs">v</span>`;
+    }
+    const sh = (r && r.scorers && r.scorers.home) || [];
+    const sa = (r && r.scorers && r.scorers.away) || [];
+    const scLine = (sh.length || sa.length)
+      ? `<div class="scorers"><span>${sh.map(escapeHTML).join(", ")}</span>` +
+        `<span class="ball">⚽</span><span>${sa.map(escapeHTML).join(", ")}</span></div>` : "";
+    const winLine = (hasScore && r.winner) ? `<div class="your-pick">→ ${teamHTML(r.winner)} advance</div>` : "";
+    html += `<div class="res-block">
+      <div class="sched-row">
+        <span class="t">${m.time || ""}</span>
+        <span class="grp" title="${m.round}">KO</span>
+        <span class="h">${teamA ? teamHTML(teamA) : escapeHTML(m.labelA || "?")}</span>
+        ${mid}
+        <span class="a">${teamB ? teamHTML(teamB) : escapeHTML(m.labelB || "?")}</span>
+        <span class="chan"></span>
+      </div>
+      ${m.venue ? `<div class="fixture-venue">📍 ${m.venue}, ${m.city}</div>` : ""}
+      ${scLine}${winLine}
+    </div>`;
+  });
+
   wrap.innerHTML = html;
 }
 
