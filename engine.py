@@ -5,6 +5,7 @@ return computed standings, qualifiers and a fully-populated knockout bracket.
 """
 
 from data import GROUPS, R32, R16, QF, SF, FINAL, build_group_fixtures
+from third_place_table import ALLOCATION as _THIRD_ALLOCATION, BERTH_MATCHES as _THIRD_BERTHS
 
 _FIXTURES = build_group_fixtures()
 _FIXTURES_BY_GROUP = {}
@@ -149,11 +150,19 @@ def rank_third_place(standings):
 
 
 def _assign_third_slots(qualifier_groups):
-    """Bipartite-match the qualifying 3rd-place groups to R32 third slots.
+    """Map the qualifying 3rd-place groups to R32 third slots.
 
-    qualifier_groups: set of 8 group letters whose 3rd team qualified.
-    Returns dict (match_id, side) -> group_letter, or None if no perfect match.
+    Uses FIFA's official allocation table (Annex C, 495 combinations); the
+    third berth is side 1 of each match. Falls back to a constraint solver only
+    if the combination isn't in the table. Returns dict (match_id, side) ->
+    group_letter, or None if no assignment is possible.
     """
+    key = "".join(sorted(qualifier_groups))
+    row = _THIRD_ALLOCATION.get(key)
+    if row and len(row) == len(_THIRD_BERTHS):
+        return {(_THIRD_BERTHS[i], 1): row[i] for i in range(len(row))}
+
+    # Fallback: bipartite-match groups to slots by their allowed sets.
     slots = []  # (match_id, side, allowed_set)
     for mid, sides in R32.items():
         for side, ref in enumerate(sides):
