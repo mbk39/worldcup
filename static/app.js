@@ -530,7 +530,9 @@ function paintKoBracket() {
 function kobBracketMatchEl(mid) {
   const m = KOB.bracket[mid] || {};
   const lbl = bracketLabels[mid] || {};
-  const picked = m.winner;                       // effective winner (incl prefilled completed ties)
+  // Highlight the user's OWN pick (never overwritten). Teams come from the
+  // resolved bracket (their picks advance; unpicked finished ties are filled).
+  const picked = KOB.picks[mid] || KOB.picks[String(mid)] || null;
   const aw = (KOB.actual[mid] || {}).winner;
   const pts = KOB.perMatch[mid];
   const done = KOB.completed.has(String(mid));    // tie already finished -> locked

@@ -137,9 +137,12 @@ def _completed_ko_winners(results):
 
 
 def _effective_ko_picks(picks, results):
-    """User picks with already-finished ties overridden by the real winner."""
-    eff = {str(k): v for k, v in (picks or {}).items() if str(k).isdigit()}
-    eff.update(_completed_ko_winners(results))   # completed ties win
+    """For DISPLAY / advancement only: the user's own picks, with any tie they
+    LEFT BLANK that has already finished filled in by the real winner so the
+    bracket stays connected. The user's picks are never overwritten — scoring
+    always uses their raw picks."""
+    eff = dict(_completed_ko_winners(results))   # fill gaps for finished ties
+    eff.update({str(k): v for k, v in (picks or {}).items() if str(k).isdigit()})  # user picks win
     return eff
 
 
@@ -157,7 +160,8 @@ def _resolve_ko_bracket(results, picks):
 
 
 def _ko_points(picks, results):
-    return scoring.compute_ko_bracket_points(_effective_ko_picks(picks, results), results)
+    # Score the user's OWN picks against the real winners (never the prefills).
+    return scoring.compute_ko_bracket_points(picks, results)
 
 
 def _ko_bracket_payload(uid):
@@ -167,7 +171,7 @@ def _ko_bracket_payload(uid):
     eff = _effective_ko_picks(picks, results)
     bracket = _resolve_ko_bracket(results, eff)
     actual = scoring.resolve_actual_bracket(results)
-    pts = scoring.compute_ko_bracket_points(eff, results)
+    pts = scoring.compute_ko_bracket_points(picks, results)   # score raw picks
     return {
         "picks": picks,
         "completed": list(completed.keys()),
@@ -946,11 +950,11 @@ def api_league_member(user, code, uid):
         }
 
     # Knockout-bracket challenge — reveals to others once it locks.
-    kbp = _effective_ko_picks(db.get_ko_bracket(uid), results)   # completed ties prefilled
-    kb = scoring.compute_ko_bracket_points(kbp, results)
+    kbp = db.get_ko_bracket(uid)                                  # the user's own picks
+    kb = scoring.compute_ko_bracket_points(kbp, results)          # scored vs reality
     ko_bracket_rows = None
     if is_self or _ko_bracket_locked():
-        rb = _resolve_ko_bracket(results, kbp)
+        rb = _resolve_ko_bracket(results, _effective_ko_picks(kbp, results))
         ab = scoring.resolve_actual_bracket(results)
         rows = []
         for k, team in kbp.items():
